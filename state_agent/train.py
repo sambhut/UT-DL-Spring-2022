@@ -1,8 +1,8 @@
 import numpy as np
 from torch.distributions import Bernoulli
 
-from player_draft import Player, GreedyActor
-from state_agent.planner import planner, network_features
+from player_draft import Player
+from state_agent.planner import network_features, Planner
 from utils import show_agent, rollout_many
 import torch
 import copy
@@ -18,11 +18,11 @@ if __name__ == "__main__":
     else:
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
-    action_net = planner()
+    action_net = Planner(17, 32, 1)
     actor = Player(action_net)
-    many_action_nets = [planner() for i in range(10)]
+    many_action_nets = [Planner(17, 32, 1) for i in range(10)]
     data = rollout_many([Player(action_net) for action_net in many_action_nets], n_steps=600)
-    good_initialization = many_action_nets[np.argmax([d[-1]['player_state'].overall_distance for d in data])]
+    good_initialization = many_action_nets[np.argmax([d[-1]['overall_distance'] for d in data])]
     show_agent(actor, n_steps=600)
 
     n_epochs = 20
@@ -42,12 +42,9 @@ if __name__ == "__main__":
 
         # Roll out the policy, compute the Expectation
         trajectories = rollout_many([Player(action_net)] * n_trajectories, n_steps=600)
-        good_init = many_action_nets[np.argmax([d[-1]['player_state'].overall_distance for d in data])]
-        actor = Player(good_init)
-        show_agent(actor, n_steps=600)
 
         print('epoch = %d   best_dist = ' % epoch,
-              np.max([t[-1]['player_state'].overall_distance for t in trajectories]))
+              np.max([t[-1]['overall_distance'] for t in trajectories]))
 
         # Compute all the reqired quantities to update the policy
         features = []
@@ -56,8 +53,7 @@ if __name__ == "__main__":
         for trajectory in trajectories:
             for i in range(len(trajectory)):
                 # Compute the returns
-                returns.append(trajectory[min(i + T, len(trajectory) - 1)]['player_state'].overall_distance -
-                               trajectory[i]['player_state'].overall_distance)
+                returns.append(trajectory[i]['reward_state'])
                 # Compute the features
                 features.append(torch.as_tensor(
                     network_features(trajectory[i]['player_state'], trajectory[i]['opponent_state'],
@@ -89,10 +85,10 @@ if __name__ == "__main__":
             optim.step()
             avg_expected_log_return.append(float(expected_log_return))
 
-        best_performance, current_performance = rollout_many([GreedyActor(best_action_net), GreedyActor(action_net)],
+        best_performance, current_performance = rollout_many([Player(best_action_net), Player(action_net)],
                                                              n_steps=600)
-        if best_performance[-1]['player_state'].overall_distance < current_performance[-1][
-            'player_state'].overall_distance:
+        if best_performance[-1]['overall_distance'] < current_performance[-1][
+            'overall_distance']:
             best_action_net = copy.deepcopy(action_net)
     # %%
-    show_agent(GreedyActor(best_action_net))
+    show_agent(Player(best_action_net))

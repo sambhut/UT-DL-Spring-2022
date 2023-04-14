@@ -8,6 +8,10 @@ import imageio
 
 @ray.remote
 class Rollout:
+
+    def euclidean_distance(self,pos1, pos2):
+        return np.linalg.norm(np.array(pos1) - np.array(pos2))
+
     def __init__(self, screen_width, screen_height, hd=True, track='icy_soccer_field', render=True, frame_skip=1):
 
         config = pystk.GraphicsConfig.hd()
@@ -36,8 +40,10 @@ class Rollout:
         self.race.restart()
         self.race.step()
         data = []
-
-
+        world_info = pystk.WorldState()
+        world_info.update()
+        total_distance = 0
+        prev_position = world_info.players[0].kart.location
         for i in range(n_steps // self.frame_skip):
             world_info = pystk.WorldState()
 
@@ -45,9 +51,19 @@ class Rollout:
 
             player_info = world_info.players[0].kart
             opponent_info = world_info.players[1].kart
-            soccer_ball = world_info.soccer.ball.location
+            soccer_ball = world_info.soccer.ball
+            soccer_state = world_info.soccer
+            soccer_ball_loc = world_info.soccer.ball.location
+            goal_location = soccer_state.goal_line[1]
+            goal_ball_distance = np.array(soccer_ball_loc) - np.array(goal_location[1])
+            puck_goal_distance = np.linalg.norm(goal_ball_distance)
+            reward_state = 1/(puck_goal_distance +1)
 
-            agent_data = { 'player_state': player_info,'opponent_state':opponent_info,'soccer_state':soccer_ball}
+            current_position = np.array(player_info.location)
+            total_distance += self.euclidean_distance(prev_position, current_position)
+            prev_position = current_position
+
+            agent_data = { 'player_state': player_info,'opponent_state':opponent_info,'soccer_state':soccer_state,'overall_distance':total_distance,"reward_state":reward_state}
             if self.render:
                 agent_data['image'] = np.array(self.race.render_data[0].image)
 

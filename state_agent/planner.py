@@ -1,22 +1,61 @@
 import numpy as np
 import torch
 
+class Planner(torch.nn.Module):
+    def __init__(self, input_size, hidden_size, output_size):
+        super(Planner, self).__init__()
+        self.fc1 = torch.nn.Linear(input_size, hidden_size)
+        self.relu = torch.nn.ReLU()
+        self.fc2 = torch.nn.Linear(hidden_size, output_size, bias=False)
 
-def planner():
-    return torch.nn.Linear(8, 1, bias=False)
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.relu(x)
+        x = self.fc2(x)
+        return x
 
+
+def limit_period(angle):
+    # turn angle into -1 to 1
+    return angle - torch.floor(angle / 2 + 0.5) * 2
 
 def network_features(player_pos, opponent_pos, ball_pos):
 
-    p = np.array(player_pos.location)[[0, 2]].astype(np.float32)
-    o = np.array(opponent_pos.location)[[0, 2]].astype(np.float32)
-    b = np.array(ball_pos)[[0, 2]].astype(np.float32)
-    t = np.array(player_pos.front)[[0, 2]].astype(np.float32)
-    d = (p - t) / np.linalg.norm(p - t)
-    d_o = np.array([-d[1], d[0]], dtype=np.float32)
-    ball_rel = b - p
-    dist_to_ball = np.linalg.norm(p - b)
-    dist_to_opp = np.linalg.norm(p - o)
-    features = np.concatenate([d, d_o, ball_rel, [dist_to_ball, dist_to_opp]])
+    kart_front = torch.tensor(player_pos.front, dtype=torch.float32)[[0, 2]]
+    kart_center = torch.tensor(player_pos.location, dtype=torch.float32)[[0, 2]]
+    kart_direction = (kart_front-kart_center) / torch.norm(kart_front-kart_center)
+    kart_angle = torch.atan2(kart_direction[1], kart_direction[0])
+
+    puck_center = torch.tensor(ball_pos.ball.location, dtype=torch.float32)[[0, 2]]
+    kart_to_puck_direction = (puck_center - kart_center) / torch.norm(puck_center-kart_center)
+    kart_to_puck_angle = torch.atan2(kart_to_puck_direction[1], kart_to_puck_direction[0])
+
+    kart_to_puck_angle_difference = limit_period((kart_angle - kart_to_puck_angle)/np.pi)
+
+    # features of opponents
+    opponent_center0 = torch.tensor(opponent_pos.location, dtype=torch.float32)[[0, 2]]
+    opponent_center1 = torch.tensor(opponent_pos.location, dtype=torch.float32)[[0, 2]]
+
+    kart_to_opponent0 = (opponent_center0 - kart_center) / torch.norm(opponent_center0-kart_center)
+    kart_to_opponent1 = (opponent_center1 - kart_center) / torch.norm(opponent_center1-kart_center)
+
+    kart_to_opponent0_angle = torch.atan2(kart_to_opponent0[1], kart_to_opponent0[0])
+    kart_to_opponent1_angle = torch.atan2(kart_to_opponent1[1], kart_to_opponent1[0])
+
+    kart_to_opponent0_angle_difference = limit_period((kart_angle - kart_to_opponent0_angle)/np.pi)
+    kart_to_opponent1_angle_difference = limit_period((kart_angle - kart_to_opponent1_angle)/np.pi)
+
+    # features of score-line
+    goal_line_center = torch.tensor(ball_pos.goal_line[1], dtype=torch.float32)[:, [0, 2]].mean(dim=0)
+
+    puck_to_goal_line = (goal_line_center-puck_center) / torch.norm(goal_line_center-puck_center)
+    puck_to_goal_line_angle = torch.atan2(puck_to_goal_line[1], puck_to_goal_line[0])
+    kart_to_goal_line_angle_difference = limit_period((kart_angle - puck_to_goal_line_angle)/np.pi)
+
+    features = torch.tensor([kart_center[0], kart_center[1], kart_angle, kart_to_puck_angle, opponent_center0[0],
+        opponent_center0[1], opponent_center1[0], opponent_center1[1], kart_to_opponent0_angle, kart_to_opponent1_angle,
+        goal_line_center[0], goal_line_center[1], puck_to_goal_line_angle, kart_to_puck_angle_difference,
+        kart_to_opponent0_angle_difference, kart_to_opponent1_angle_difference,
+        kart_to_goal_line_angle_difference], dtype=torch.float32)
 
     return features
