@@ -23,7 +23,16 @@ Make sure your installation is good by running the command in your command line 
 File --> Settings. --> search python interpreter --> on right panel it should show Add new interpreter --> select conda environment and look up for your newly created conda environment.
 
 
-That should be it.
+That should be it.The .idea folder should expose all the required run configurations.
+
+
+# Optional - Pycharm navigation and Debug
+Below are useful resources to understand pycharm env , if its new to you. This is very helfpul and will help through out your MSCS program
+
+https://www.youtube.com/watch?v=sRGpvbhOhQs&ab_channel=TechWithTim
+
+
+
 
 # Steps to get Local machine running 
 
