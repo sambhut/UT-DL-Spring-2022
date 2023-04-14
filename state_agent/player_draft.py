@@ -8,6 +8,9 @@ class Player:
     def __init__(self, action_net):
         self.action_net = action_net.cpu().eval()
 
+    """
+    This will be replaced with act method
+    """
     def __call__(self, player_state, opponent_state, soccer_state, **kwargs):
         f = network_features(player_state, opponent_state, soccer_state)
         input_tensor = torch.tensor(torch.as_tensor(f).view(1, -1), dtype=torch.float)

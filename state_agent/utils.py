@@ -6,7 +6,9 @@ from config import device
 from IPython.display import Video, display
 import imageio
 
-@ray.remote
+def init_ray():
+    ray.init()
+
 class Rollout:
 
     def euclidean_distance(self,pos1, pos2):
@@ -77,28 +79,44 @@ class Rollout:
         return data
 
 
+def create_rollout(screen_width, screen_height, use_ray, hd=True, track='icy_soccer_field', render=True, frame_skip=1):
+    if use_ray:
+        remoteRollout = ray.remote(Rollout)
+        return remoteRollout.remote(screen_width, screen_height, hd=hd, track=track, render=render, frame_skip=frame_skip)
+    else:
+        return Rollout(screen_width, screen_height, hd=hd, track=track, render=render, frame_skip=frame_skip)
+
+
+def perform_rollout(rollout_instance, agent, n_steps=200, use_ray=False):
+    if use_ray:
+        return ray.get(rollout_instance.__call__.remote(agent, n_steps=n_steps))
+    else:
+        return rollout_instance.__call__(agent, n_steps=n_steps)
+
+
+
 def show_video(frames, fps=30):
     imageio.mimwrite('/tmp/test.mp4', frames, fps=fps, bitrate=1000000)
     display(Video('/tmp/test.mp4', width=800, height=600, embed=True))
 
 
-viz_rollout = Rollout.remote(400, 300)
 
-rollouts = [Rollout.remote(50, 50, hd=False, render=False, frame_skip=5) for i in range(10)]
-def rollout_many(many_agents, **kwargs):
-    ray_data = []
+def rollout_many(many_agents, use_ray=True, **kwargs):
+    if use_ray and not ray.is_initialized():
+        init_ray()
+    rollouts = [create_rollout(50, 50, True, hd=False, render=False, frame_skip=5) for i in range(10)]
+    rollout_data = []
     for i, agent in enumerate(many_agents):
-         ray_data.append( rollouts[i % len(rollouts)].__call__.remote(agent, **kwargs) )
-    return ray.get(ray_data)
+        rollout_data.append(perform_rollout(rollouts[i % len(rollouts)], agent, use_ray=use_ray, **kwargs))
+    return rollout_data
 
 
-def show_agent(agent, n_steps=600):
-    data = ray.get(viz_rollout.__call__.remote(agent, n_steps=n_steps))
+def show_agent(agent, n_steps=600,use_ray=False):
+    if use_ray and not ray.is_initialized():
+        init_ray()
+    viz_rollout = create_rollout(400, 300, False)
+    data = perform_rollout(viz_rollout, agent, n_steps=n_steps, use_ray=False)
     show_video([d['image'] for d in data])
 
 
 
-def dummy_agent(**kwargs):
-    action = pystk.Action()
-    action.acceleration = 1
-    return action
