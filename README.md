@@ -12,7 +12,7 @@ Run - PlayerTests.py which will directly run the player so that we can focus on 
 
 ## Default location of video output 
 
-Below location can be changed to other intended location instead of /tmp/
+Below location in utils.py can be changed to other intended location instead of /tmp/
 
 def show_video(frames, fps=30):     
 imageio.mimwrite('/tmp/test.mp4', frames, fps=fps, bitrate=1000000)     
