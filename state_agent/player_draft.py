@@ -2,6 +2,10 @@ import torch
 import pystk
 from torch.distributions import Bernoulli
 from state_agent.planner import network_features
+import torch
+import numpy as np
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
 
 
 class Player:
@@ -17,13 +21,16 @@ class Player:
         output = self.action_net.forward(input_tensor)[0]
 
         action = pystk.Action()
-        action.acceleration = 0.5
-        steer_dist = Bernoulli(logits=output[0])
-        action.steer = steer_dist.sample() * 2 - 1
+
+        brake_threshold = 0.2
+        if torch.sigmoid(output[2]).item() > brake_threshold:
+            action.brake = True
+            action.acceleration = 0.0
+            action.brake = False
+            action.acceleration = torch.sigmoid(output[0]).item()
+
+        steering_gain = 0.3
+        steering_gain = torch.tanh(output[1]).item() * steering_gain
+        action.steer = np.clip(steering_gain, -1, 1)
         return action
 
-def normalize_positions(positions):
-    min_values = positions.min(axis=0)
-    max_values = positions.max(axis=0)
-    normalized_positions = 2 * (positions - min_values) / (max_values - min_values) - 1
-    return normalized_positions

@@ -6,6 +6,8 @@ from config import device
 from IPython.display import Video, display
 import imageio
 
+pystk_initialized = False
+
 def init_ray():
     ray.init()
 
@@ -20,7 +22,6 @@ class Rollout:
         config.screen_width = screen_width
         config.screen_height = screen_height
         pystk.init(config)
-
         self.frame_skip = frame_skip
         self.render = render
         config = pystk.RaceConfig()
@@ -56,10 +57,32 @@ class Rollout:
             soccer_ball = world_info.soccer.ball
             soccer_state = world_info.soccer
             soccer_ball_loc = world_info.soccer.ball.location
-            goal_location = soccer_state.goal_line[1]
+            goal_location = soccer_state.goal_line[0]
             goal_ball_distance = np.array(soccer_ball_loc) - np.array(goal_location[1])
             puck_goal_distance = np.linalg.norm(goal_ball_distance)
-            reward_state = 1/(puck_goal_distance +1)
+
+            puck_agent_distance = self.euclidean_distance(player_info.location, soccer_ball_loc)
+            reward_towards_puck = -puck_agent_distance
+            puck_agent_vector = np.array(soccer_ball_loc) - np.array(player_info.location)
+            goal_agent_vector = np.array(goal_location[1]) - np.array(player_info.location)
+
+            cos_angle = np.dot(puck_agent_vector, goal_agent_vector) / (
+                        np.linalg.norm(puck_agent_vector) * np.linalg.norm(goal_agent_vector))
+            reward_puck_direction = cos_angle
+
+            own_goal_location = soccer_state.goal_line[1]
+            own_goal_agent_distance = self.euclidean_distance(player_info.location, own_goal_location)
+            reward_away_own_goal = -own_goal_agent_distance
+
+            reward_weight_puck_goal = 1
+            reward_weight_towards_puck = 0.8
+            reward_weight_puck_direction = 0.8
+            reward_weight_away_own_goal = 0.1
+
+            reward_state = (reward_weight_puck_goal * (1 / (puck_goal_distance + 1)) +
+                            reward_weight_towards_puck * reward_towards_puck +
+                            reward_weight_puck_direction * reward_puck_direction +
+                            reward_weight_away_own_goal * reward_away_own_goal)
 
             current_position = np.array(player_info.location)
             total_distance += self.euclidean_distance(prev_position, current_position)
@@ -74,6 +97,15 @@ class Rollout:
 
             for it in range(self.frame_skip):
                 self.race.step(action)
+
+            # Print the action taken by the agent
+            print(f"Action: {action}")
+
+            # Print the intermediate values used in reward calculation
+            print(f"Soccer ball location: {soccer_ball_loc}")
+            print(f"Goal location: {goal_location[1]}")
+            print(f"Puck-goal distance: {puck_goal_distance}")
+            print(f"Reward state: {reward_state}")
 
             data.append(agent_data)
         return data
@@ -96,8 +128,8 @@ def perform_rollout(rollout_instance, agent, n_steps=200, use_ray=False):
 
 
 def show_video(frames, fps=30):
-    imageio.mimwrite('../test.mp4', frames, fps=fps, bitrate=1000000)
-    display(Video('../test.mp4', width=800, height=600, embed=True))
+    imageio.mimwrite('/tmp/test.mp4', frames, fps=fps, bitrate=1000000)
+    display(Video('/tmp/test.mp4', width=800, height=600, embed=True))
 
 
 
@@ -115,6 +147,14 @@ def show_agent(agent, n_steps=600,use_ray=False):
     if use_ray and not ray.is_initialized():
         init_ray()
     viz_rollout = create_rollout(400, 300, False)
+    data = perform_rollout(viz_rollout, agent, n_steps=n_steps, use_ray=False)
+    show_video([d['image'] for d in data])
+    return viz_rollout
+
+
+def show_viz_rolloutagent(agent,viz_rollout, n_steps=600,use_ray=False):
+    if use_ray and not ray.is_initialized():
+        init_ray()
     data = perform_rollout(viz_rollout, agent, n_steps=n_steps, use_ray=False)
     show_video([d['image'] for d in data])
 

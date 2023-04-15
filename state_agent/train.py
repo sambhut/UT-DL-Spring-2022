@@ -3,9 +3,12 @@ from torch.distributions import Bernoulli
 
 from player_draft import Player
 from state_agent.planner import network_features, Planner
-from utils import show_agent, rollout_many
+from utils import show_agent, rollout_many,show_viz_rolloutagent
 import torch
 import copy
+import torch
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
 
 if __name__ == "__main__":
 
@@ -18,18 +21,19 @@ if __name__ == "__main__":
     else:
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
-    action_net = Planner(17, 32, 1)
+    action_net = Planner(17, 32, 3)
     actor = Player(action_net)
-    many_action_nets = [Planner(17, 32, 1) for i in range(10)]
+    many_action_nets = [Planner(17, 32, 3) for i in range(10)]
     data = rollout_many([Player(action_net) for action_net in many_action_nets], n_steps=600)
     good_initialization = many_action_nets[np.argmax([d[-1]['overall_distance'] for d in data])]
-    show_agent(actor, n_steps=600)
+    viz_rollout = show_agent(actor, n_steps=600)
 
-    n_epochs = 20
+    show_viz_rolloutagent(actor,viz_rollout, n_steps=600)
+
+    n_epochs = 10
     n_trajectories = 10
     n_iterations = 50
     batch_size = 128
-    T = 20
 
     action_net = copy.deepcopy(good_initialization)
 
@@ -38,13 +42,16 @@ if __name__ == "__main__":
     optim = torch.optim.Adam(action_net.parameters(), lr=1e-3)
 
     for epoch in range(n_epochs):
-        eps = 1e-2
 
         # Roll out the policy, compute the Expectation
         trajectories = rollout_many([Player(action_net)] * n_trajectories, n_steps=600)
+        rewards = [t[-1]['reward_state'] for t in trajectories]
 
-        print('epoch = %d   best_dist = ' % epoch,
-              np.max([t[-1]['overall_distance'] for t in trajectories]))
+        print(f"Epoch = {epoch}")
+        print(f"Best distance = {np.max([t[-1]['overall_distance'] for t in trajectories])}")
+        print(f"Average reward: {np.mean(rewards)}")
+        print(f"Min reward: {np.min(rewards)}")
+        print(f"Max reward: {np.max(rewards)}")
 
         # Compute all the reqired quantities to update the policy
         features = []
@@ -77,18 +84,19 @@ if __name__ == "__main__":
             batch_features = features[batch_ids]
 
             output = action_net(batch_features)
-            pi = Bernoulli(logits=output[:, 0])
+            acceleration = torch.sigmoid(output[:, 0])
+            steering = torch.tanh(output[:, 1])
+            braking = torch.sigmoid(output[:, 2])
 
-            expected_log_return = (pi.log_prob(batch_actions) * batch_returns).mean()
+            log_prob_acceleration = (batch_actions * torch.log(acceleration) + (1 - batch_actions) * torch.log(
+                1 - acceleration)).sum()
+            log_prob_steering = torch.log(1 - torch.abs(batch_actions - steering)).sum()
+            log_prob_braking = (batch_actions * torch.log(braking) + (1 - batch_actions) * torch.log(1 - braking)).sum()
+
+            expected_log_return = (log_prob_acceleration + log_prob_steering + log_prob_braking) * batch_returns
             optim.zero_grad()
-            (-expected_log_return).backward()
+            (-expected_log_return.mean()).backward()
             optim.step()
-            avg_expected_log_return.append(float(expected_log_return))
+            avg_expected_log_return.append(float(expected_log_return.mean()))
 
-        best_performance, current_performance = rollout_many([Player(best_action_net), Player(action_net)],
-                                                             n_steps=600)
-        if best_performance[-1]['overall_distance'] < current_performance[-1][
-            'overall_distance']:
-            best_action_net = copy.deepcopy(action_net)
-    # %%
-    show_agent(Player(best_action_net))
+    show_viz_rolloutagent(Player(action_net), viz_rollout)
