@@ -96,8 +96,8 @@ def perform_rollout(rollout_instance, agent, n_steps=200, use_ray=False):
 
 
 def show_video(frames, fps=30):
-    imageio.mimwrite('/tmp/test.mp4', frames, fps=fps, bitrate=1000000)
-    display(Video('/tmp/test.mp4', width=800, height=600, embed=True))
+    imageio.mimwrite('../test.mp4', frames, fps=fps, bitrate=1000000)
+    display(Video('../test.mp4', width=800, height=600, embed=True))
 
 
 

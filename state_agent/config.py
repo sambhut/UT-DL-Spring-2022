@@ -1,5 +1,10 @@
 import torch
 
-device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-print('device = ', device)
-
+device = None
+if torch.backends.mps.is_available():
+    print("MPS device  found.")
+    device = torch.device("mps")
+    x = torch.ones(8, device=device)
+    print(x)
+else:
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
