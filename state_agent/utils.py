@@ -61,28 +61,8 @@ class Rollout:
             goal_ball_distance = np.array(soccer_ball_loc) - np.array(goal_location[1])
             puck_goal_distance = np.linalg.norm(goal_ball_distance)
 
-            puck_agent_distance = self.euclidean_distance(player_info.location, soccer_ball_loc)
-            reward_towards_puck = -puck_agent_distance
-            puck_agent_vector = np.array(soccer_ball_loc) - np.array(player_info.location)
-            goal_agent_vector = np.array(goal_location[1]) - np.array(player_info.location)
-
-            cos_angle = np.dot(puck_agent_vector, goal_agent_vector) / (
-                        np.linalg.norm(puck_agent_vector) * np.linalg.norm(goal_agent_vector))
-            reward_puck_direction = cos_angle
-
-            own_goal_location = soccer_state.goal_line[1]
-            own_goal_agent_distance = self.euclidean_distance(player_info.location, own_goal_location)
-            reward_away_own_goal = -own_goal_agent_distance
-
-            reward_weight_puck_goal = 1
-            reward_weight_towards_puck = 0.8
-            reward_weight_puck_direction = 0.8
-            reward_weight_away_own_goal = 0.1
-
-            reward_state = (reward_weight_puck_goal * (1 / (puck_goal_distance + 1)) +
-                            reward_weight_towards_puck * reward_towards_puck +
-                            reward_weight_puck_direction * reward_puck_direction +
-                            reward_weight_away_own_goal * reward_away_own_goal)
+            reward_state = self.contruct_reward(goal_location, player_info, puck_goal_distance, soccer_ball_loc,
+                                                soccer_state)
 
             current_position = np.array(player_info.location)
             total_distance += self.euclidean_distance(prev_position, current_position)
@@ -109,6 +89,58 @@ class Rollout:
 
             data.append(agent_data)
         return data
+
+    def contruct_reward(self, goal_location, player_info, puck_goal_distance, soccer_ball_loc, soccer_state):
+        puck_agent_distance = self.euclidean_distance(player_info.location, soccer_ball_loc)
+        reward_towards_puck = -puck_agent_distance
+        puck_agent_vector = np.array(soccer_ball_loc) - np.array(player_info.location)
+        goal_agent_vector = np.array(goal_location[1]) - np.array(player_info.location)
+
+
+        reward_puck_direction = np.dot(puck_agent_vector, goal_agent_vector) / (
+                np.linalg.norm(puck_agent_vector) * np.linalg.norm(goal_agent_vector))
+
+        own_goal_location = soccer_state.goal_line[1]
+        own_goal_agent_distance = self.euclidean_distance(player_info.location, own_goal_location)
+        reward_away_own_goal = -own_goal_agent_distance
+
+        #r_weight_puck_goal = 1
+        #r_weight_towards_puck = 0.3
+        #r_weight_puck_direction = 0.3
+        #r_weight_away_own_goal = 0.1
+
+        #r_weight_puck_goal = 2
+        #r_weight_towards_puck = 0.8
+        #r_weight_puck_direction = 0.8
+        #r_weight_away_own_goal = 0.1
+
+
+        #r_weight_puck_goal = 1
+        #r_weight_towards_puck = 0.5
+        #r_weight_puck_direction = 0.5
+        #r_weight_away_own_goal = 0.1
+
+
+        r_weight_puck_goal = 1
+        r_weight_towards_puck = 0.8
+        r_weight_puck_direction = 0.8
+        r_weight_away_own_goal = 0.1
+
+        # reward_state = (r_weight_puck_goal * (1 / (puck_goal_distance + 1))
+
+        # reward_state = (r_weight_towards_puck * reward_towards_puck)
+
+        # reward_state = (r_weight_puck_direction * reward_puck_direction)
+
+        # reward_state = (r_weight_away_own_goal * reward_away_own_goal)
+
+        reward_state = (r_weight_puck_goal * (1 / (puck_goal_distance + 1)) +
+                        r_weight_towards_puck * reward_towards_puck +
+                        r_weight_puck_direction * reward_puck_direction +
+                        r_weight_away_own_goal * reward_away_own_goal)
+
+
+        return reward_state
 
 
 def create_rollout(screen_width, screen_height, use_ray, hd=True, track='icy_soccer_field', render=True, frame_skip=1):
