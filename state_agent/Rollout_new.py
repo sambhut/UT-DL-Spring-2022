@@ -1,9 +1,17 @@
 import torch
 import pystk
 import ray
+import numpy as np
+from jurgen_agent.player import Team as Jurgen
+from geoffrey_agent.player import Team as Geoffrey
+from tournament.utils import VideoRecorder
 #more imports..
 
 #WARNING! == Won't compile. Work under progress
+
+MAX_FRAMES = 1000
+
+ray_init_done = 0
 
 def to_native(o):
     # Super obnoxious way to hide pystk
@@ -42,19 +50,23 @@ class Rollout_new:
 
     @staticmethod
     def _g(f):
-        from .remote import ray
-        if ray is not None and isinstance(f, (ray.types.ObjectRef, ray._raylet.ObjectRef)):
+        import ray
+        if ray is not None:
             return ray.get(f)
         return f
 
-    def __init__(self, team0, team1, num_player=1):
+    def __init__(self, team0, team1, num_player=1, use_ray=False):
         # fire up pystk
         graphics_config = pystk.GraphicsConfig.none()
         pystk.init(graphics_config)
 
+        self.num_player = num_player
+
         # set teams for a new match
-        team0_cars = self._g(self._r(team0.new_match)(0, num_player))
-        team1_cars = self._g(self._r(team1.new_match)(1, num_player))
+        #team0_cars = self._g(self._r(team0.new_match)(0, num_player))
+        #team1_cars = self._g(self._r(team1.new_match)(1, num_player))
+        team0_cars = team0.new_match(0, num_player)
+        team1_cars = team1.new_match(1, num_player)
 
         # set race config and players config
         RaceConfig = pystk.RaceConfig
@@ -69,20 +81,29 @@ class Rollout_new:
             race_config.players.append(PlayerConfig(controller=controller1, team=1, kart=team1_cars[i % len(team1_cars)]))
 
         #Start the match
-        race = pystk.Race(race_config)
-        race.start()
-        race.step()
+        self.race = pystk.Race(race_config)
+        self.race.start()
+        self.race.step()
 
         self.team0 = team0
         self.team1 = team1
 
-    def __call__(self, initial_ball_location=[0, 0], initial_ball_velocity=[0, 0], max_frames=1000):
+        print("init done")
+
+    def __call__(self, initial_ball_location=[0, 0], initial_ball_velocity=[0, 0], max_frames=MAX_FRAMES, use_ray=False, record_fn=None):
+        print("inside call")
         data = []
         state = pystk.WorldState()
         state.update()
         state.set_ball_location((initial_ball_location[0], 1, initial_ball_location[1]),
                                 (initial_ball_velocity[0], 0, initial_ball_velocity[1]))
 
+        if record_fn:
+            print("record_fn is not None")
+        else:
+            print("record_fn is None")
+
+        print("about to start iterating over frames")
         for it in range(max_frames):
             state.update()
 
@@ -92,18 +113,28 @@ class Rollout_new:
             soccer_state = to_native(state.soccer)
             agent_data = {'player_state': team0_state, 'opponent_state': team1_state, 'soccer_state': soccer_state}
 
+            # print some data every 100 frames
+            if (it%100) == 0:
+                print("iteration {%d} / {%d}" % (it, max_frames))
+                print("team0 state is ", team0_state[0]["kart"]["location"])
+                print("team1 state is ", team1_state[0]["kart"]["location"])
+                print("soccer state is ", soccer_state['ball']['location'])
+
             # Have each team produce actions (in parallel)
             t0_can_act = True  # True for now, or we can use _check function in runner
             t1_can_act = True
             if t0_can_act:
-                team0_actions_delayed = self._r(team0.act)(team0_state, team1_state, soccer_state)
+                team0_actions_delayed = self._r(self.team0.act)(team0_state, team1_state, soccer_state)
 
             if t1_can_act:
-                team1_actions_delayed = self._r(team1.act)(team1_state, team0_state, soccer_state)
+                team1_actions_delayed = self._r(self.team1.act)(team1_state, team0_state, soccer_state)
 
             #Wait for actions to finish
-            team0_actions = self._g(team0_actions_delayed) if t0_can_act else None
-            team1_actions = self._g(team1_actions_delayed) if t1_can_act else None
+            #team0_actions = self._g(team0_actions_delayed) if t0_can_act else None
+            #team1_actions = self._g(team1_actions_delayed) if t1_can_act else None
+
+            team0_actions = team0_actions_delayed if t0_can_act else None
+            team1_actions = team1_actions_delayed if t1_can_act else None
 
             """
             CHECK: do we need this really??
@@ -117,15 +148,38 @@ class Rollout_new:
             """
 
             # Assemble the actions
-            for i in range(num_player):
+            actions = []
+            for i in range(self.num_player):
                 a0 = team0_actions[i] if team0_actions is not None and i < len(team0_actions) else {}
                 a1 = team1_actions[i] if team1_actions is not None and i < len(team1_actions) else {}
                 actions.append(a0)
                 actions.append(a1)
 
+            if record_fn:
+                self._r(record_fn)(team0_state, team1_state, soccer_state=soccer_state, actions=actions)
+
             agent_data['action'] = team0_actions[0]
-            race.step([pystk.Action(**a) for a in actions])
+            self.race.step([pystk.Action(**a) for a in actions])
 
             # Save all relevant data
             data.append(agent_data)
         return data
+
+if __name__ == "__main__":
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
+
+    team0 = Jurgen()
+    team1 = Geoffrey()
+    num_player = 2
+    use_ray = False
+    record_video = True
+    video_name = "rollout.mp4"
+
+    recorder = None
+    if record_video:
+        recorder = recorder & VideoRecorder(video_name)
+
+    rollout = Rollout_new(team0=team0, team1=team1, num_player=num_player, use_ray=use_ray)
+
+    rollout.__call__(use_ray=use_ray, record_fn=recorder)
+
