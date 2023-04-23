@@ -13,6 +13,20 @@ MAX_FRAMES = 1000
 
 ray_init_done = 0
 
+pystk_init_done = False
+
+class AIRunner:
+    #agent_type = 'state'
+    #is_ai = True
+    def new_match(self, team: int, num_players: int) -> list:
+        pass
+
+    def act(self, player_state, opponent_state, world_state):
+        return []
+
+    #def info(self):
+    #    return RunnerInfo('state', None, 0)
+
 def to_native(o):
     # Super obnoxious way to hide pystk
     import pystk
@@ -55,18 +69,23 @@ class Rollout_new:
             return ray.get(f)
         return f
 
-    def __init__(self, team0, team1, num_player=1, use_ray=False):
+    def __init__(self, team0, team1=AIRunner(), num_player=2, use_ray=False):
+
+        global pystk_init_done
         # fire up pystk
         graphics_config = pystk.GraphicsConfig.none()
-        pystk.init(graphics_config)
+
+        if pystk_init_done == False:
+            pystk_init_done = True
+            pystk.init(graphics_config)
 
         self.num_player = num_player
 
         # set teams for a new match
         #team0_cars = self._g(self._r(team0.new_match)(0, num_player))
         #team1_cars = self._g(self._r(team1.new_match)(1, num_player))
-        team0_cars = team0.new_match(0, num_player)
-        team1_cars = team1.new_match(1, num_player)
+        team0_cars = team0.new_match(0, num_player) or ['tux']
+        team1_cars = team1.new_match(1, num_player) or ['sara_the_racer']
 
         # set race config and players config
         RaceConfig = pystk.RaceConfig
@@ -83,15 +102,15 @@ class Rollout_new:
         #Start the match
         self.race = pystk.Race(race_config)
         self.race.start()
-        self.race.step()
+        #self.race.step()
 
         self.team0 = team0
         self.team1 = team1
 
-        print("init done")
-
     def __call__(self, initial_ball_location=[0, 0], initial_ball_velocity=[0, 0], max_frames=MAX_FRAMES, use_ray=False, record_fn=None):
-        print("inside call")
+        global pystk_init_done
+        global print_flag
+
         data = []
         state = pystk.WorldState()
         state.update()
@@ -103,7 +122,6 @@ class Rollout_new:
         else:
             print("record_fn is None")
 
-        print("about to start iterating over frames")
         for it in range(max_frames):
             state.update()
 
@@ -163,13 +181,27 @@ class Rollout_new:
 
             # Save all relevant data
             data.append(agent_data)
+
+
+        self.race.stop()
+        del self.race
+        pystk.clean()
+        pystk_init_done = False
+
         return data
+
+def rollout_many(many_agents, **kwargs):
+    data = []
+    for i, agent in enumerate(many_agents):
+         rollout = Rollout_new(many_agents[i], **kwargs)
+         data.append(rollout.__call__(**kwargs))
+    return data
 
 if __name__ == "__main__":
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
     team0 = Jurgen()
-    team1 = Geoffrey()
+    team1 = AIRunner()
     num_player = 2
     use_ray = False
     record_video = True
