@@ -1,122 +1,128 @@
-import torch
-import pystk
-import ray
 import numpy as np
-from config import device
-from IPython.display import Video, display
-import imageio
-
-def init_ray():
-    ray.init()
-
-class Rollout:
-
-    def euclidean_distance(self,pos1, pos2):
-        return np.linalg.norm(np.array(pos1) - np.array(pos2))
-
-    def __init__(self, screen_width, screen_height, hd=True, track='icy_soccer_field', render=True, frame_skip=1):
-
-        config = pystk.GraphicsConfig.hd()
-        config.screen_width = screen_width
-        config.screen_height = screen_height
-        pystk.init(config)
-
-        self.frame_skip = frame_skip
-        self.render = render
-        config = pystk.RaceConfig()
-        config.mode = config.RaceMode.SOCCER
-        config.track = "icy_soccer_field"
-        config.step_size = 0.1
-        config.num_kart = 2
-        config.players[0].kart = "wilber"
-        config.players[0].controller = pystk.PlayerConfig.Controller.PLAYER_CONTROL
-        config.players[0].team = 0
-        config.players.append(
-        pystk.PlayerConfig("", pystk.PlayerConfig.Controller.AI_CONTROL, 1))
-
-        self.race = pystk.Race(config)
-        self.race.start()
-
-    def __call__(self, agent, n_steps=200):
-        torch.set_num_threads(1)
-        self.race.restart()
-        self.race.step()
-        data = []
-        world_info = pystk.WorldState()
-        world_info.update()
-        total_distance = 0
-        prev_position = world_info.players[0].kart.location
-        for i in range(n_steps // self.frame_skip):
-            world_info = pystk.WorldState()
-
-            world_info.update()
-
-            player_info = world_info.players[0].kart
-            opponent_info = world_info.players[1].kart
-            soccer_ball = world_info.soccer.ball
-            soccer_state = world_info.soccer
-            soccer_ball_loc = world_info.soccer.ball.location
-            goal_location = soccer_state.goal_line[1]
-            goal_ball_distance = np.array(soccer_ball_loc) - np.array(goal_location[1])
-            puck_goal_distance = np.linalg.norm(goal_ball_distance)
-            reward_state = 1/(puck_goal_distance +1)
-
-            current_position = np.array(player_info.location)
-            total_distance += self.euclidean_distance(prev_position, current_position)
-            prev_position = current_position
-
-            agent_data = { 'player_state': player_info,'opponent_state':opponent_info,'soccer_state':soccer_state,'overall_distance':total_distance,"reward_state":reward_state}
-            if self.render:
-                agent_data['image'] = np.array(self.race.render_data[0].image)
-
-            action = agent(**agent_data)
-            agent_data['action'] = action
-
-            for it in range(self.frame_skip):
-                self.race.step(action)
-
-            data.append(agent_data)
-        return data
+from enum import IntEnum
 
 
-def create_rollout(screen_width, screen_height, use_ray, hd=True, track='icy_soccer_field', render=True, frame_skip=1):
-    if use_ray:
-        remoteRollout = ray.remote(Rollout)
-        return remoteRollout.remote(screen_width, screen_height, hd=hd, track=track, render=render, frame_skip=frame_skip)
-    else:
-        return Rollout(screen_width, screen_height, hd=hd, track=track, render=render, frame_skip=frame_skip)
+class Team(IntEnum):
+    RED = 0
+    BLUE = 1
 
 
-def perform_rollout(rollout_instance, agent, n_steps=200, use_ray=False):
-    if use_ray:
-        return ray.get(rollout_instance.__call__.remote(agent, n_steps=n_steps))
-    else:
-        return rollout_instance.__call__(agent, n_steps=n_steps)
+def video_grid(team1_images, team2_images, team1_state='', team2_state=''):
+    from PIL import Image, ImageDraw
+    grid = np.hstack((np.vstack(team1_images), np.vstack(team2_images)))
+    grid = Image.fromarray(grid)
+    grid = grid.resize((grid.width // 2, grid.height // 2))
+
+    draw = ImageDraw.Draw(grid)
+    draw.text((20, 20), team1_state, fill=(255, 0, 0))
+    draw.text((20, grid.height // 2 + 20), team2_state, fill=(0, 0, 255))
+    return grid
+
+
+def map_image(team1_state, team2_state, soccer_state, resolution=512, extent=65, anti_alias=1):
+    BG_COLOR = (0xee, 0xee, 0xec)
+    RED_COLOR = (0xa4, 0x00, 0x00)
+    BLUE_COLOR = (0x20, 0x4a, 0x87)
+    BALL_COLOR = (0x2e, 0x34, 0x36)
+    from PIL import Image, ImageDraw
+    r = Image.new('RGB', (resolution*anti_alias, resolution*anti_alias), BG_COLOR)
+
+    def _to_coord(x):
+        return resolution * anti_alias * (x + extent) / (2 * extent)
+
+    draw = ImageDraw.Draw(r)
+    # Let's draw the goal line
+    draw.line([(_to_coord(x), _to_coord(y)) for x, _, y in soccer_state['goal_line'][0]], width=5*anti_alias, fill=RED_COLOR)
+    draw.line([(_to_coord(x), _to_coord(y)) for x, _, y in soccer_state['goal_line'][1]], width=5*anti_alias, fill=BLUE_COLOR)
+
+    # and the ball
+    x, _, y = soccer_state['ball']['location']
+    s = soccer_state['ball']['size']
+    draw.ellipse((_to_coord(x-s), _to_coord(y-s), _to_coord(x+s), _to_coord(y+s)), width=2*anti_alias, fill=BALL_COLOR)
+
+    # and karts
+    for c, s in [(BLUE_COLOR, team1_state), (RED_COLOR, team2_state)]:
+        for k in s:
+            x, _, y = k['kart']['location']
+            fx, _, fy = k['kart']['front']
+            sx, _, sy = k['kart']['size']
+            s = (sx+sy) / 2
+            draw.ellipse((_to_coord(x - s), _to_coord(y - s), _to_coord(x + s), _to_coord(y + s)), width=5*anti_alias, fill=c)
+            draw.line((_to_coord(x), _to_coord(y), _to_coord(x+(fx-x)*2), _to_coord(y+(fy-y)*2)), width=4*anti_alias, fill=0)
+
+    if anti_alias == 1:
+        return r
+    return r.resize((resolution, resolution), resample=Image.ANTIALIAS)
+
+
+# Recording functionality
+class BaseRecorder:
+    def __call__(self, team1_state, team2_state, soccer_state, actions, team1_images=None, team2_images=None):
+        raise NotImplementedError
+
+    def __and__(self, other):
+        return MultiRecorder(self, other)
+
+    def __rand__(self, other):
+        return MultiRecorder(self, other)
+
+
+class MultiRecorder(BaseRecorder):
+    def __init__(self, *recorders):
+        self._r = [r for r in recorders if r]
+
+    def __call__(self, *args, **kwargs):
+        for r in self._r:
+            r(*args, **kwargs)
+
+
+class VideoRecorder(BaseRecorder):
+    """
+        Produces pretty output videos
+    """
+    def __init__(self, video_file):
+        import imageio
+        self._writer = imageio.get_writer(video_file, fps=20)
+
+    def __call__(self, team1_state, team2_state, soccer_state, actions, team1_images=None, team2_images=None):
+        if team1_images and team2_images:
+            self._writer.append_data(np.array(video_grid(team1_images, team2_images,
+                                                         'Blue: %d' % soccer_state['score'][1],
+                                                         'Red: %d' % soccer_state['score'][0])))
+        else:
+            self._writer.append_data(np.array(map_image(team1_state, team2_state, soccer_state)))
+
+    def __del__(self):
+        if hasattr(self, '_writer'):
+            self._writer.close()
+
+
+class DataRecorder(BaseRecorder):
+    def __init__(self, record_images=False):
+        self._record_images = record_images
+        self._data = []
+
+    def __call__(self, team1_state, team2_state, soccer_state, actions, team1_images=None, team2_images=None):
+        data = dict(team1_state=team1_state, team2_state=team2_state, soccer_state=soccer_state, actions=actions)
+        if self._record_images:
+            data['team1_images'] = team1_images
+            data['team2_images'] = team2_images
+        self._data.append(data)
+
+    def data(self):
+        return self._data
+
+    def reset(self):
+        self._data = []
 
 
 
-def show_video(frames, fps=30):
-    imageio.mimwrite('/tmp/test.mp4', frames, fps=fps, bitrate=1000000)
-    display(Video('/tmp/test.mp4', width=800, height=600, embed=True))
-
-
-
-def rollout_many(many_agents, use_ray=True, **kwargs):
-    if use_ray and not ray.is_initialized():
-        init_ray()
-    rollouts = [create_rollout(50, 50, True, hd=False, render=False, frame_skip=5) for i in range(10)]
-    rollout_data = []
-    for i, agent in enumerate(many_agents):
-        rollout_data.append(perform_rollout(rollouts[i % len(rollouts)], agent, use_ray=use_ray, **kwargs))
-    return rollout_data
-
-
-def show_agent(agent, n_steps=600,use_ray=False):
-    if use_ray and not ray.is_initialized():
-        init_ray()
-    viz_rollout = create_rollout(400, 300, False)
-    data = perform_rollout(viz_rollout, agent, n_steps=n_steps, use_ray=False)
-    show_video([d['image'] for d in data])
-
-
+def load_recording(recording):
+    from pickle import load
+    with open(recording, 'rb') as f:
+        while True:
+            try:
+                yield load(f)
+            except EOFError:
+                break
 
