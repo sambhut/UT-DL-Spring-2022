@@ -68,10 +68,10 @@ if __name__ == "__main__":
 
     player1_net = Planner(17, 32, 3).to(device)
     player2_net = Planner(17, 32, 3).to(device)
-    dic1 = torch.load('player1_action_model.pt')
-    dic2 = torch.load('player2_action_model.pt')
-    player1_net.load_state_dict(dic1)
-    player2_net.load_state_dict(dic2)
+    #dic1 = torch.load('player1_action_model.pt')
+    #dic2 = torch.load('player2_action_model.pt')
+    #player1_net.load_state_dict(dic1)
+    #player2_net.load_state_dict(dic2)
 
 
     best_player1_net = copy.deepcopy(player1_net)
@@ -99,9 +99,11 @@ if __name__ == "__main__":
             if dagger_it > 0:
                 trajectories = record_manystate([Team(player1_net, player2_net)] * n_trajectories)
 
+                player_trajectories =[]
                 for trajectory in trajectories:
                     trajectory = trajectory[0]
-                    expert_labeled_trajectories = []
+                    player_tuple = []
+                    player_labeled_trajectories = []
                     for i in range(len(trajectory)):
 
                         features = extract_features(trajectory[i]['team1_state'], trajectory[i]['soccer_state'], trajectory[i]['team2_state'], 0)
@@ -112,19 +114,21 @@ if __name__ == "__main__":
                         acceleration1, steer1, brake1 = expert1_net(features)
                         acceleration2, steer2, brake2 = expert2_net(features)
 
-                        expert_labeled_step_data = trajectory[i].copy()
+                        player_labeled_step_data = trajectory[i].copy()
 
-                        expert_labeled_step_data['actions'][0]['steer'] = steer1
-                        expert_labeled_step_data['actions'][0]['acceleration'] = acceleration1
-                        expert_labeled_step_data['actions'][0]['brake'] = brake1
+                        player_labeled_step_data['actions'][0]['steer'] = steer1
+                        player_labeled_step_data['actions'][0]['acceleration'] = acceleration1
+                        player_labeled_step_data['actions'][0]['brake'] = brake1
 
-                        expert_labeled_step_data['actions'][2]['steer'] = steer2
-                        expert_labeled_step_data['actions'][2]['acceleration'] = acceleration2
-                        expert_labeled_step_data['actions'][2]['brake'] = brake2
+                        player_labeled_step_data['actions'][2]['steer'] = steer2
+                        player_labeled_step_data['actions'][2]['acceleration'] = acceleration2
+                        player_labeled_step_data['actions'][2]['brake'] = brake2
 
-                        expert_labeled_trajectories.append(expert_labeled_step_data)
-
-                expert_demonstrations.extend(expert_labeled_trajectories)
+                        player_labeled_trajectories.append(player_labeled_step_data)
+                    player_tuple.append(player_labeled_trajectories)
+                    player_tuple.append(trajectory[1])
+                    player_trajectories.append(player_tuple)
+                expert_demonstrations.extend(player_trajectories)
 
             trajectories = expert_demonstrations
 
