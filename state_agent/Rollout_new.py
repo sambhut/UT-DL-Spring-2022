@@ -5,9 +5,7 @@ import numpy as np
 from jurgen_agent.player import Team as Jurgen
 from geoffrey_agent.player import Team as Geoffrey
 from tournament.utils import VideoRecorder
-#more imports..
-
-#WARNING! == Won't compile. Work under progress
+import random
 
 MAX_FRAMES = 1000
 
@@ -85,7 +83,7 @@ class Rollout_new:
         #team0_cars = self._g(self._r(team0.new_match)(0, num_player))
         #team1_cars = self._g(self._r(team1.new_match)(1, num_player))
         team0_cars = team0.new_match(0, num_player) or ['tux']
-        team1_cars = team1.new_match(1, num_player) or ['sara_the_racer']
+        team1_cars = team1.new_match(1, num_player) or ['tux']
 
         # set race config and players config
         RaceConfig = pystk.RaceConfig
@@ -107,9 +105,8 @@ class Rollout_new:
         self.team0 = team0
         self.team1 = team1
 
-    def __call__(self, initial_ball_location=[0, 0], initial_ball_velocity=[0, 0], max_frames=MAX_FRAMES, use_ray=False, record_fn=None):
+    def __call__(self, initial_ball_location=[0, 0], initial_ball_velocity=[0, 0], max_frames=MAX_FRAMES, use_ray=False, record_fn=None, train=False):
         global pystk_init_done
-        global print_flag
 
         data = []
         state = pystk.WorldState()
@@ -117,11 +114,36 @@ class Rollout_new:
         state.set_ball_location((initial_ball_location[0], 1, initial_ball_location[1]),
                                 (initial_ball_velocity[0], 0, initial_ball_velocity[1]))
 
+        # Add some randomness to the starting location
+        if train == True:
+            rand1 = random.randrange(2)
+            rand2 = random.randrange(2)
+            print("rand1 is ", rand1)
+            print("rand2 is ", rand2)
+            team0_state = [to_native(p) for p in state.players[0::2]]
+            team1_state = [to_native(p) for p in state.players[1::2]]
+            player_0_start_location = team0_state[0]["kart"]["location"]
+            player_1_start_location = team0_state[1]["kart"]["location"]
+            player_2_start_location = team1_state[0]["kart"]["location"]
+            player_3_start_location = team1_state[1]["kart"]["location"]
+
+            #print("player_0_start_location is ", player_0_start_location)
+            #print("player_1_start_location is ", player_1_start_location)
+            #print("player_2_start_location is ", player_2_start_location)
+            #print("player_3_start_location is ", player_3_start_location)
+
+            state.set_kart_location(kart_id=0, position=(player_0_start_location[0]+rand1, player_0_start_location[1], player_0_start_location[2]+rand2))
+            state.set_kart_location(kart_id=1, position=(player_1_start_location[0]+rand1, player_1_start_location[1], player_1_start_location[2]+rand2))
+            state.set_kart_location(kart_id=2, position=(player_2_start_location[0]+rand1, player_2_start_location[1], player_2_start_location[2]+rand2))
+            state.set_kart_location(kart_id=3, position=(player_3_start_location[0]+rand1, player_3_start_location[1], player_3_start_location[2]+rand2))
+
         if record_fn:
             print("record_fn is not None")
         else:
             print("record_fn is None")
 
+        old_puck_center = torch.Tensor([0, 0])
+        old_soccer_state = {'ball': {'location': [0.0, 0.0, 0.0]}}
         for it in range(max_frames):
             state.update()
 
@@ -132,11 +154,11 @@ class Rollout_new:
             agent_data = {'player_state': team0_state, 'opponent_state': team1_state, 'soccer_state': soccer_state}
 
             # print some data every 100 frames
-            if (it%100) == 0:
+            if (it%200) == 0:
                 print("iteration {%d} / {%d}" % (it, max_frames))
-                print("team0 state is ", team0_state[0]["kart"]["location"])
-                print("team1 state is ", team1_state[0]["kart"]["location"])
-                print("soccer state is ", soccer_state['ball']['location'])
+                print("player kart0 location is ", team0_state[0]["kart"]["location"])
+                print("opponent kart0 is ", team1_state[0]["kart"]["location"])
+                print("soccer ball location is ", soccer_state['ball']['location'])
 
             # Have each team produce actions (in parallel)
             t0_can_act = True  # True for now, or we can use _check function in runner
@@ -176,11 +198,24 @@ class Rollout_new:
             if record_fn:
                 self._r(record_fn)(team0_state, team1_state, soccer_state=soccer_state, actions=actions)
 
-            agent_data['action'] = team0_actions[0]
+            agent_data['action0'] = team0_actions[0]
+            agent_data['action1'] = team0_actions[1]
             self.race.step([pystk.Action(**a) for a in actions])
+
+            # Gather velocity of puck
+            current_puck_center = torch.tensor(soccer_state['ball']['location'], dtype=torch.float32)[[0, 2]]
+            agent_data['ball_velocity'] = current_puck_center - old_puck_center
+            # print some data every 100 frames
+            if (it%100) == 0:
+                print("iteration {%d} / {%d}" % (it, max_frames))
+                print("team0 state is ", team0_state[0]["kart"]["location"])
+                print("team1 state is ", team1_state[0]["kart"]["location"])
+                print("soccer state is ", soccer_state['ball']['location'])
+                print("ball velocity is ", agent_data['ball_velocity'])
 
             # Save all relevant data
             data.append(agent_data)
+            old_puck_center = current_puck_center
 
 
         self.race.stop()
@@ -193,8 +228,9 @@ class Rollout_new:
 def rollout_many(many_agents, **kwargs):
     data = []
     for i, agent in enumerate(many_agents):
-         rollout = Rollout_new(many_agents[i], **kwargs)
-         data.append(rollout.__call__(**kwargs))
+        print("performing rollout number ", i)
+        rollout = Rollout_new(many_agents[i], **kwargs)
+        data.append(rollout.__call__(**kwargs, train=False))
     return data
 
 if __name__ == "__main__":

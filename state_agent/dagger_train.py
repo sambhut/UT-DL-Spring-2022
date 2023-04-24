@@ -1,116 +1,204 @@
-import numpy as np
-from torch.distributions import Bernoulli
-
-from state_agent.player_draft import Player
-from state_agent.planner import network_features, Planner
-from state_agent.utils import show_agent, rollout_many,show_viz_rolloutagent
-from jurgen_agent.player import Team as Jur
-from yann_agent.player import Team as Yan
-from geoffrey_agent.player import Team as Geo
-import copy
 import torch
-import warnings
-import torch.utils.tensorboard as tb
-import pystk
-warnings.filterwarnings("ignore", category=UserWarning)
+from jurgen_agent.player import Team as Jurgen
+from geoffrey_agent.player import Team as Geoffrey
+from state_agent.player import network_features, Team as Actor
+from state_agent.Rollout_new import rollout_many
+from state_agent.planner import Planner
+from state_agent.Rollout_new import Rollout_new
+from os import path
+from tournament.utils import VideoRecorder
+import time
 
-class Actor:
-    def __init__(self, action_net):
-        self.action_net = action_net.cpu().eval()
+print_val = 0
 
-    def __call__(self, player_state, opponent_state, soccer_state, **kwargs):
-        f = network_features(player_state, opponent_state, soccer_state)
-        input_tensor = torch.as_tensor(f).view(1, -1)
-        output = self.action_net.forward(input_tensor)[0]
+def train():
+    global print_val
 
-        action = pystk.Action()
-
-        brake_threshold = 0.2
-        if torch.sigmoid(output[2]).item() > brake_threshold:
-            action.brake = True
-            action.acceleration = 0.0
-        else:
-            action.brake = False
-            action.acceleration = torch.sigmoid(output[0]).item()
-
-        steering_gain = 0.3
-        steering_gain = torch.tanh(output[1]).item() * steering_gain
-        action.steer = np.clip(steering_gain, -1, 1)
-        return action
-
-def rolloutstate_to_args(train_data):
-    player_state_d = [{}]
-    ps = train_data['player_state']
-    player_state_d[0]['kart'] = {'front' : ps.front, 'location' : ps.location, 'rotation' : ps.rotation, 'size' : ps.size, 'velocity' : ps.velocity}
-
-    opponent_state_d = [{},{}]
-    os = train_data['opponent_state']
-    opponent_state_d[0]['kart'] = {'front' : os.front, 'location' : os.location, 'rotation' : os.rotation, 'size' : os.size, 'velocity' : os.velocity}
-    opponent_state_d[1]['kart'] = {'front' : os.front, 'location' : os.location, 'rotation' : os.rotation, 'size' : os.size, 'velocity' : os.velocity}
-
-    ss = train_data['soccer_state']
-    soccer_state_d = {'ball' : {'location' : ss.ball.location}, 'goal_line' : ss.goal_line}
-
-    return player_state_d, opponent_state_d, soccer_state_d
-
-
-if __name__ == "__main__":
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
-
-    action_net = Planner(17, 32, 3).to(device)
-    actor = Actor(action_net)
-
-    expert_player = Jur()
-    #expert_player = Yan()
-    #expert_player = Geo()
-
-    expert_player.new_match(0, 1)
-
-    n_epochs = 10
+    n_epochs = 20
     n_trajectories = 10
     batch_size = 128
+    learning_rate = 0.001
+    #weight_decay = 1e-5
+    weight_decay = 0
+
+    expert_agent = Jurgen()
+    #expert_agent = Jurgen()
+
+    # Create the network
+    action_net = Planner(13, 128, 3).to(device)
 
     # Create the optimizer
-    optimizer = torch.optim.Adam(action_net.parameters())
+    optimizer = torch.optim.Adam(action_net.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
-    # Create the loss
-    loss = torch.nn.MSELoss()
+    # Create the losses
+    mseLoss = torch.nn.MSELoss()
+    bceLoss = torch.nn.BCEWithLogitsLoss()
+
+    # Collect the data for imitation learning
+    train_data_imitation = []
+    for data in rollout_many([expert_agent] * n_trajectories):
+        train_data_imitation.extend(data)
+
+    imitation_features = network_features(train_data_imitation[0]['player_state'][0], train_data_imitation[0]['opponent_state'][0],
+                                train_data_imitation[0]['soccer_state'])
+    print("original imitation features shape is ", imitation_features.shape)
+    print("ball velocity is ", train_data_imitation[0]['ball_velocity'])
+    features_new = torch.cat([imitation_features, train_data_imitation[0]['ball_velocity']])
+    print("new imitation features shape is ", features_new.shape)
+
+    train_features_imitation0 = torch.stack([torch.cat([network_features(d['player_state'][0], d['opponent_state'][0], d['soccer_state']), d['ball_velocity']]) for d
+                                   in train_data_imitation]).to(device).float()
+    print("train features imitation (kart 0) shape: ", train_features_imitation0.shape)
+
+    train_labels_imitation0 = torch.stack([torch.as_tensor((d['action0']['acceleration'], d['action0']['steer'], d['action0']['brake'])) for d in train_data_imitation]).to(device).float()
+    print("train labels imitation (kart 0) shape ", train_labels_imitation0.shape)
+
+    train_features_imitation1 = torch.stack([torch.cat([network_features(d['player_state'][1], d['opponent_state'][1], d['soccer_state']), d['ball_velocity']]) for d
+                                   in train_data_imitation]).to(device).float()
+    print("train features imitation (kart 1) shape: ", train_features_imitation1.shape)
+
+    train_labels_imitation1 = torch.stack([torch.as_tensor((d['action1']['acceleration'], d['action1']['steer'], d['action1']['brake'])) for d in train_data_imitation]).to(device).float()
+    print("train labels imitation (kart 1) shape ", train_labels_imitation1.shape)
+
+    train_features_imitation = torch.cat([train_features_imitation0, train_features_imitation1], dim=0)
+    print("train features imitation (both karts) shape: ", train_features_imitation.shape)
+
+    train_labels_imitation = torch.cat([train_labels_imitation0, train_labels_imitation1], dim=0)
+    print("train labels imitation (both karts) shape ", train_labels_imitation.shape)
+
+    # Start training based on imitation learning
+    global_step = 0
+    action_net.train().to(device)
 
     for epoch in range(n_epochs):
-        trajectories = rollout_many([Actor(action_net)] * n_trajectories)
+        for iteration in range(0, len(train_data_imitation), batch_size):
+            batch_ids = torch.randint(0, len(train_data_imitation), (batch_size,), device=device)
+            batch_features = train_features_imitation[batch_ids]
+            batch_labels = train_labels_imitation[batch_ids]
 
-        train_features = []
-        train_actions = []
+            o = action_net(batch_features)
+            acc_loss_val = mseLoss(o[:, 0], batch_labels[:, 0])
+            steer_loss_val = mseLoss(o[:, 1], batch_labels[:, 1])
+            brake_loss_val = bceLoss(o[:, -1], batch_labels[:, -1])
+            loss_val = 0.9*acc_loss_val + steer_loss_val + 0.1*brake_loss_val
 
-        for trajectory in trajectories:
-            for i in range(len(trajectory)):
-                train_features.append(torch.as_tensor(
-                    network_features(trajectory[i]['player_state'], trajectory[i]['opponent_state'],
-                                     trajectory[i]['soccer_state']), dtype=torch.float32).cuda().view(-1))
+            print("imitation loss in iteration %d, epoch %d is %f" % (iteration/batch_size, epoch, loss_val))
 
-                player_state, opponent_state, soccer_state = rolloutstate_to_args(trajectory[i])
-                actions = expert_player.act(player_state, opponent_state, soccer_state)
-                #print("actions returned is ", actions)
-                train_actions.append(torch.cat((actions[0]['acceleration'], actions[0]['steer'], actions[0]['brake'])))
-
-        print(train_actions[0])
-
-        train_features = torch.stack(train_features).cuda()
-        train_actions = torch.stack(train_actions).cuda()
-
-        print("length of train_features is ", train_features.size())
-
-        action_net.train().cuda()
-        for iteration in range(0, len(train_features), batch_size):
-            batch_ids = torch.randint(0, len(train_features), (batch_size,), device=device)
-            batch_images = train_features[batch_ids]
-            batch_labels = train_actions[batch_ids]
-            output = action_net(batch_images)
-            loss_val = loss(output, batch_labels)
-            print("loss in iteration %d, epoch %d is %f" % (iteration/batch_size, epoch, loss_val))
+            global_step += 1
 
             optimizer.zero_grad()
-            loss_val.backward(retain_graph=True)
+            loss_val.backward()
             optimizer.step()
 
-    show_agent(Actor(action_net), n_steps=600)
+    action_net.to("cpu")
+
+    # Save the model as act expects the pt file
+    model = torch.jit.script(action_net)
+    torch.jit.save(model, 'my_traced_model.pt')
+
+
+# Collect the data for dagger
+    train_data_dagger = []
+    for data in rollout_many([Actor()] * n_trajectories):
+        train_data_dagger.extend(data)
+
+    train_features_dagger0 = torch.stack([torch.cat([network_features(d['player_state'][0], d['opponent_state'][0], d['soccer_state']), d['ball_velocity']]) for d
+                                   in train_data_dagger]).to(device).float()
+    print("train features dagger (kart 0) shape: ", train_features_dagger0.shape)
+
+    print_val = train_data_dagger[0]['action0']
+
+    train_features_dagger1 = torch.stack([torch.cat([network_features(d['player_state'][1], d['opponent_state'][1], d['soccer_state']), d['ball_velocity']]) for d
+                                   in train_data_dagger]).to(device).float()
+    print("train features dagger (kart 1) shape: ", train_features_dagger1.shape)
+
+    train_features_dagger = torch.cat([train_features_dagger0, train_features_dagger1], dim=0)
+    print("train features dagger (both karts) shape: ", train_features_dagger.shape)
+
+    expert_agent.new_match(0, 2)
+
+    action_dict = []
+    for d in train_data_dagger:
+        action_dict.append(expert_agent.act(d['player_state'], d['opponent_state'], d['soccer_state']))
+
+    print(action_dict[0])
+
+    train_labels_dagger0 = torch.stack([torch.as_tensor((l[0]['acceleration'], l[0]['steer'], l[0]['brake'])) for l in action_dict]).to(device).float()
+    print("train labels dagger (kart 0) shape: ", train_labels_dagger0.shape)
+
+    train_labels_dagger1 = torch.stack([torch.as_tensor((l[1]['acceleration'], l[1]['steer'], l[1]['brake'])) for l in action_dict]).to(device).float()
+    print("train labels dagger (kart 1) shape: ", train_labels_dagger1.shape)
+
+    train_labels_dagger = torch.cat([train_labels_dagger0, train_labels_dagger1], dim=0)
+    print("train labels dagger (both karts) shape ", train_labels_dagger.shape)
+
+    # merge imitation learning and dagger data
+    total_train_features = torch.cat([train_features_imitation, train_features_dagger], dim=0)
+    total_train_labels = torch.cat([train_labels_imitation, train_labels_dagger], dim=0)
+
+    print("size of total training features is ", total_train_features.size())
+    print("size of total training labels is ", total_train_labels.size())
+
+    # Start training for dagger using combined data
+    global_step = 0
+    action_net.train().to(device)
+
+    for epoch in range(n_epochs):
+        for iteration in range(0, len(total_train_features), batch_size):
+            batch_ids = torch.randint(0, len(total_train_features), (batch_size,), device=device)
+            batch_features = total_train_features[batch_ids]
+            batch_labels = total_train_labels[batch_ids]
+
+            o = action_net(batch_features)
+            acc_loss_val = mseLoss(o[:, 0], batch_labels[:, 0])
+            steer_loss_val = mseLoss(o[:, 1], batch_labels[:, 1])
+            brake_loss_val = bceLoss(o[:, -1], batch_labels[:, -1])
+
+            # Assign different weights for each loss
+            loss_val = 0.9*acc_loss_val + steer_loss_val + 0.1*brake_loss_val
+
+            print("dagger training loss in iteration %d, epoch %d is %f" % (iteration/batch_size, epoch, loss_val))
+
+            global_step += 1
+
+            optimizer.zero_grad()
+            loss_val.backward()
+            optimizer.step()
+
+    action_net.to("cpu")
+
+    # Save the final model
+    model = torch.jit.script(action_net)
+    torch.jit.save(model, 'my_traced_model.pt')
+
+if __name__ == "__main__":
+
+    start_time = time.time()
+
+    # training
+    train()
+
+    print("training done")
+
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
+
+    # inference
+    team0 = Actor()
+    #team0 = Jurgen()
+
+    use_ray = False
+    record_video = True
+    video_name = "trained_dagger_agent.mp4"
+
+    recorder = None
+    if record_video:
+        recorder = recorder & VideoRecorder(video_name)
+
+    rollout = Rollout_new(team0=team0, use_ray=use_ray)
+
+    rollout.__call__(use_ray=use_ray, record_fn=recorder)
+
+    print(print_val)
+
+    print(" Total execution time = %.2f seconds" %(time.time()-start_time))

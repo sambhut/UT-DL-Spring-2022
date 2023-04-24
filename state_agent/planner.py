@@ -5,15 +5,32 @@ class Planner(torch.nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
         super(Planner, self).__init__()
         self.fc1 = torch.nn.Linear(input_size, hidden_size)
-        self.relu = torch.nn.LeakyReLU()
-        self.fc2 = torch.nn.Linear(hidden_size, output_size, bias=False)
+        self.BN1 = torch.nn.BatchNorm1d(hidden_size)
+        self.relu = torch.nn.ReLU()
+        self.fc2 = torch.nn.Linear(hidden_size, 64)
+        self.BN2 = torch.nn.BatchNorm1d(64)
+        self.fc3 = torch.nn.Linear(64, 32)
+        self.BN3 = torch.nn.BatchNorm1d(32)
+        self.fc4 = torch.nn.Linear(32, output_size, bias=False)
 
 
     def forward(self, x):
-        x = self.fc1(x)
-        x = self.relu(x)
-        x = self.fc2(x)
-        return x
+        out = x
+        if out.dim() == 1:
+            out = out.unsqueeze(0)
+        out = self.fc1(out)
+        out = self.BN1(out)
+        out = self.relu(out)
+        out = self.fc2(out)
+        out = self.BN2(out)
+        out = self.relu(out)
+        out = self.fc3(out)
+        out = self.BN3(out)
+        out = self.relu(out)
+        out = self.fc4(out)
+        if out.dim() != x.dim():
+            out = out.squeeze(0)
+        return out
 
 
 def limit_period(angle):
