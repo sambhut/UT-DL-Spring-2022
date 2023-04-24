@@ -128,7 +128,7 @@ class Team:
         # TODO: Change me. I'm just cruising straight
         actions = []
         for player_id, pstate in enumerate(player_state):
-            features = extract_features(pstate, soccer_state, opponent_state, self.team)
+            features = extract_features(pstate, soccer_state, opponent_state, 1 )
             input_tensor = features.cuda()
             if player_id % 2 == 0:
                 output= self.model0(input_tensor)

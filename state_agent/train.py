@@ -44,11 +44,11 @@ if __name__ == "__main__":
 
 #####################################################
     ##  HYPER PARAMS ##
-    n_epochs = 1
-    n_trajectories = 10
-    n_iterations = 50
+    n_epochs = 10
+    n_trajectories = 20
+    n_iterations = 20
     batch_size = 128
-    n_dagger_iterations = 10
+    n_dagger_iterations = 5
     #ppo_eps = 0.6
     # ppo_eps = 0.1
     # ppo_eps = 0.3
@@ -138,6 +138,7 @@ if __name__ == "__main__":
             team_reward = np.mean([step_data['reward_state'] for step_tuple in trajectories for step_data in step_tuple[0]])
             team_rewards.append(team_reward)
 
+            print(f"Dagger iteration = {dagger_it}")
             print(f"Epoch = {epoch}")
             #print(f"Best distance = {np.max([t[-1]['overall_distance'] for t in trajectories])}")
             print(f"Average reward: {np.mean(rewards)}")
