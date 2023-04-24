@@ -11,7 +11,25 @@ from state_agent.planner import network_features, Planner, network_features_v2
 import os
 
 warnings.filterwarnings("ignore", category=UserWarning)
+################################
 
+ # Algorithm Proximal Policy Optimization + Dagger  + Reward shaping
+
+ # Reward shapping - https://www.youtube.com/watch?v=xManAGjbx2k&ab_channel=Udacity
+ # Proximal Policy Optimization - https://www.youtube.com/watch?v=BvZvx7ENZBw&ab_channel=Weights%26Biases
+ # Dagger - Profs lecture
+
+
+# Summary of the Training Algorithm 
+
+#Policy Algorithm - Player.py  #Value/critic network - critic.py
+# Similar to Profs code, the training code first collects the trajectories from given model. (Expert/Player - depending on Daggar condition).
+#Then it computes the old log probs and new log probs - to compute the sampling ratio ( unlike policy gradient , PPO doesnt use monte carlo sampling directly, it uses importance samling ratio)
+#to determine clipped objective encouraging more exploration. The clipped objective is tuned using the epsilion param. Higher value of epsilon determines more exploration.
+
+#Steps to tune Algorithm
+# Reward - use more accurate reward shapping mechanism by modifying - custom_runner.py
+# Tune for more exploration using hyperparams such as epsilion.
 
 
 def save_model(model, filename):
@@ -33,12 +51,9 @@ if __name__ == "__main__":
     else:
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
-    player1 = Planner(17, 32, 3).to(device)
-    player2 = Planner(17, 32, 3).to(device)
     value_net1 = ValueNetwork(17, 32).to(device)
     value_net2 = ValueNetwork(17, 32).to(device)
-    actor = Team(player1,player2)
-    many_action_nets = [Team(Planner(17, 32, 3),Planner(17, 32, 3)) for i in range(10)]
+    many_action_nets = [Team() for i in range(10)]
     data = record_manystate(many_action_nets)
     good_initialization = many_action_nets[np.argmax([d[-1]['team1']['highest_distance'] for d in data])]
 
@@ -56,7 +71,7 @@ if __name__ == "__main__":
     # ppo_eps = 0.1
     # ppo_eps = 0.001
 
-    ppo_eps = 1
+    ppo_eps = 0.2
 
 
     ## todo - epsilion decay and geedy approch
@@ -83,10 +98,10 @@ if __name__ == "__main__":
     value2_model_filepath = "player2_value_model.pt"
 
 
-    action_optim1 = torch.optim.Adam(player1_net.parameters(), lr=0.001 , weight_decay=1e-5)
-    action_optim2 = torch.optim.Adam(player2_net.parameters(), lr=0.001, weight_decay=1e-5)
-    value_optim1 = torch.optim.Adam(value_net1.parameters(), lr=0.001, weight_decay=1e-5)
-    value_optim2 = torch.optim.Adam(value_net2.parameters(), lr=0.001, weight_decay=1e-5)
+    action_optim1 = torch.optim.Adam(player1_net.parameters(), lr=0.0001 , weight_decay=1e-5)
+    action_optim2 = torch.optim.Adam(player2_net.parameters(), lr=0.0001, weight_decay=1e-5)
+    value_optim1 = torch.optim.Adam(value_net1.parameters(), lr=0.0001, weight_decay=1e-5)
+    value_optim2 = torch.optim.Adam(value_net2.parameters(), lr=0.0001, weight_decay=1e-5)
 
     team_rewards = []
     best_team_reward = -np.inf

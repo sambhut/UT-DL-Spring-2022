@@ -94,7 +94,7 @@ def network_features_v2(player_pos, opponent_pos, ball_pos):
     kart_to_opponent1_angle_difference = limit_period((kart_angle - kart_to_opponent1_angle)/np.pi)
 
     # features of score-line
-    goal_line_center = torch.tensor(ball_pos['goal_line'][1], dtype=torch.float32)[:, [0, 2]].mean(dim=0)
+    goal_line_center = torch.tensor(ball_pos['goal_line'][0], dtype=torch.float32)[:, [0, 2]].mean(dim=0)
 
     puck_to_goal_line = (goal_line_center-puck_center) / torch.norm(goal_line_center-puck_center)
     puck_to_goal_line_angle = torch.atan2(puck_to_goal_line[1], puck_to_goal_line[0])

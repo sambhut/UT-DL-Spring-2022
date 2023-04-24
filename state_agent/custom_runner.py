@@ -268,8 +268,8 @@ class Match:
 
             #Soccer ball and goal distance
             soccer_ball_loc = torch.tensor(soccer_state['ball']['location'], dtype=torch.float32)[[0, 2]]
-            goal_location = torch.tensor([-0.025, 64.5], dtype=torch.float32)
-            #goal_location = torch.tensor([0, -64.5], dtype=torch.float32)
+            #goal_location = torch.tensor([-0.025, 64.5], dtype=torch.float32)
+            goal_location = torch.tensor([0, -64.5], dtype=torch.float32)
             goal_ball_distance = np.array(soccer_ball_loc) - np.array(goal_location)
             puck_goal_distance = np.linalg.norm(goal_ball_distance)
 

@@ -64,12 +64,8 @@ class Team:
         self.team = None
         self.num_players = None
         if player1 is None or player2 is None :
-            self.model0 = Planner(17,32,3)
-            self.model1 = Planner(17, 32, 3)
-            dic1 = torch.load( 'player1_action_model.pt')
-            dic2 = torch.load('player2_action_model.pt')
-            self.model0.load_state_dict(dic1)
-            self.model1.load_state_dict(dic2)
+            self.model0 = torch.jit.load(path.join(path.dirname(path.abspath(__file__)), 'geoffrey_agent0.pt'))
+            self.model1 = torch.jit.load(path.join(path.dirname(path.abspath(__file__)), 'geoffrey_agent1.pt'))
         else:
             self.model0 = player1
             self.model1 = player2
@@ -128,7 +124,7 @@ class Team:
         # TODO: Change me. I'm just cruising straight
         actions = []
         for player_id, pstate in enumerate(player_state):
-            features = extract_features(pstate, soccer_state, opponent_state, 1 )
+            features = extract_features(pstate, soccer_state, opponent_state, 0 )
             input_tensor = features.cuda()
             if player_id % 2 == 0:
                 output= self.model0(input_tensor)
@@ -136,22 +132,14 @@ class Team:
                 output = self.model1(input_tensor)
 
             # Normalize brake and acceleration values
-            brake = torch.sigmoid(output[0]).item()
-            acceleration = torch.sigmoid(output[1]).item()
-            total = brake + acceleration
+            brake_f = torch.sigmoid(output[0]).item()
+            acceleration_f = torch.sigmoid(output[1]).item()
+            steer_f = torch.tanh(output[2]).item()
+            steer_f = np.clip(steer_f, -1, 1)
 
-            brake = brake / total
-            acceleration = acceleration / total
-
-            if brake > acceleration:
-                brake_f = 1
-                acceleration_f = 0
-            else:
-                brake_f = 0
-                acceleration_f = acceleration
 
             # Use continuous steering value
-            steering_gain = torch.tanh(output[2]).item()
-            steer_f = np.clip(steering_gain, -1, 1)
+            #steering_gain = torch.tanh(output[2]).item()
+            #steer_f = np.clip(steering_gain, -1, 1)
             actions.append(dict(acceleration=acceleration_f, steer=steer_f, brake=brake_f))
         return actions
