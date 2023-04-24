@@ -301,8 +301,7 @@ class Match:
 
             reward_state = (
                     (reward_weight_puck_goal * (1 / (puck_goal_distance + 0.1))) +
-                    ((1 / (reward_towards_puck + 0.1)) * reward_weight_towards_puck) +
-                    ((1 / (reward_puck_direction + 0.1)) * reward_weight_puck_direction)
+                    ((1 / (reward_towards_puck + 0.1)) * reward_weight_towards_puck)
             )
 
             if record_fn:

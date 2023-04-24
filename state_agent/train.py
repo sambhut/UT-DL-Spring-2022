@@ -47,7 +47,17 @@ if __name__ == "__main__":
     n_trajectories = 10
     n_iterations = 50
     batch_size = 128
-    ppo_eps = 0.2
+    #ppo_eps = 0.6
+    # ppo_eps = 0.1
+    # ppo_eps = 0.3
+    # ppo_eps = 0.4
+    # ppo_eps = 0.1
+    # ppo_eps = 0.001
+
+    ppo_eps = 1
+
+    ## todo - epsilion decay and geedy approch
+
 ######################################################
 
     player1_net = copy.deepcopy(good_initialization.model0)
@@ -62,10 +72,10 @@ if __name__ == "__main__":
     value2_model_filepath = "player2_value_model.pt"
 
 
-    action_optim1 = torch.optim.Adam(player1_net.parameters(), lr=0.005 , weight_decay=1e-5)
-    action_optim2 = torch.optim.Adam(player2_net.parameters(), lr=0.005, weight_decay=1e-5)
-    value_optim1 = torch.optim.Adam(value_net1.parameters(), lr=0.005, weight_decay=1e-5)
-    value_optim2 = torch.optim.Adam(value_net2.parameters(), lr=0.005, weight_decay=1e-5)
+    action_optim1 = torch.optim.Adam(player1_net.parameters(), lr=0.001 , weight_decay=1e-5)
+    action_optim2 = torch.optim.Adam(player2_net.parameters(), lr=0.001, weight_decay=1e-5)
+    value_optim1 = torch.optim.Adam(value_net1.parameters(), lr=0.001, weight_decay=1e-5)
+    value_optim2 = torch.optim.Adam(value_net2.parameters(), lr=0.001, weight_decay=1e-5)
 
     team_rewards = []
     best_team_reward = -np.inf
