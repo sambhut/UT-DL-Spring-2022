@@ -40,6 +40,7 @@ class Team:
         """
         self.team = None
         self.num_players = None
+        self.old_puck_center = None
         self.model = torch.jit.load(path.join(path.dirname(path.abspath(__file__)), 'my_traced_model.pt'))
         self.model.eval()
 
@@ -57,7 +58,9 @@ class Team:
            TODO: feel free to edit or delete any of the code below
         """
         self.team, self.num_players = team, num_players
-        return ['sara_the_racer'] * num_players
+        self.old_puck_center = torch.Tensor([0, 0])
+        #return ['sara_the_racer'] * num_players
+        return ['tux'] * num_players
 
     def act(self, player_state, opponent_state, soccer_state):
         """
@@ -96,9 +99,16 @@ class Team:
         #print("opponent_state in state_agent is ", opponent_state)
         #print("soccer_state in state_agent is ", soccer_state)
 
+        # compute puck velocity
+        current_puck_center = torch.tensor(soccer_state['ball']['location'], dtype=torch.float32)[[0, 2]]
+        puck_velocity = current_puck_center - self.old_puck_center
+
         actions = []
         for player_id, pstate in enumerate(player_state):
             features = network_features(pstate, opponent_state, soccer_state)
+            features = torch.cat([features, puck_velocity])
             acceleration, steer, brake = self.model(features)
-            actions.append(dict(acceleration=acceleration, steer=steer, brake=brake))
+            acceleration = torch.sigmoid(abs(acceleration))
+            brake = brake > 0.5
+            actions.append(dict(acceleration=acceleration, steer=steer, brake=brake, nitro=True))
         return actions
