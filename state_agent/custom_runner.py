@@ -209,6 +209,10 @@ class Match:
                 'highest_distance': None
             }
         }
+
+        threshold_goal_distance = 2
+        reward_puck_kart_threshold = 1.0
+        total_rewards = 0
         for it in range(max_frames):
             logging.debug('iteration {} / {}'.format(it, MAX_FRAMES))
             state.update()
@@ -266,43 +270,37 @@ class Match:
                 }
             #Rewards
 
-            #Soccer ball and goal distance
+            #Soccer ball and goal distance (Dense reward setting)
             soccer_ball_loc = torch.tensor(soccer_state['ball']['location'], dtype=torch.float32)[[0, 2]]
-            goal_location = torch.tensor([-0.025, 64.5], dtype=torch.float32)
+            goal_line_center = torch.tensor(soccer_state['goal_line'][1], dtype=torch.float32)[:, [0, 2]].mean(dim=0)
             #goal_location = torch.tensor([0, -64.5], dtype=torch.float32)
-            goal_ball_distance = np.array(soccer_ball_loc) - np.array(goal_location)
-            puck_goal_distance = - np.linalg.norm(goal_ball_distance)
+            current_distance = self.euclidean_distance(soccer_ball_loc, goal_line_center)
+            if current_distance < threshold_goal_distance:
+                puck_goal_distance_reward = 1
+            else:
+                # No reward
+                puck_goal_distance_reward = 0
+
 
             # rewards towards puck - distance
-            total_distance = 0
-            for player_info in team1_state:
-                distance = self.euclidean_distance(torch.tensor(player_info['kart']['location'], dtype=torch.float32)[[0, 2]], soccer_ball_loc)
-                total_distance += distance
-
-            average_distance = total_distance / 2
-            reward_towards_puck = -average_distance
-
-            # rewards towards puck - direction
-            total_cos_angle = 0
 
             for player_info in team1_state:
-                puck_agent_vector = np.array(soccer_ball_loc) - np.array(torch.tensor(player_info['kart']['location'], dtype=torch.float32)[[0, 2]])
-                goal_agent_vector = np.array(goal_location) - np.array(torch.tensor(player_info['kart']['location'], dtype=torch.float32)[[0, 2]])
+                distance = self.euclidean_distance(
+                    torch.tensor(player_info['kart']['location'], dtype=torch.float32)[[0, 2]], soccer_ball_loc)
+                reward = 1 if distance < reward_puck_kart_threshold else 0
+                total_rewards += reward
 
-                cos_angle = np.dot(puck_agent_vector, goal_agent_vector) / (
-                        np.linalg.norm(puck_agent_vector) * np.linalg.norm(goal_agent_vector))
-                total_cos_angle += cos_angle
+            average_reward = total_rewards / 2
+            reward_towards_puck = average_reward
 
-            average_cos_angle = total_cos_angle / 2
-            reward_puck_direction = average_cos_angle
 
             reward_weight_puck_goal = 2
             reward_weight_towards_puck = 3.5
             reward_weight_puck_direction = 2.5
 
             reward_state = (
-                    (reward_weight_puck_goal * puck_goal_distance + 1)
-
+                    (reward_weight_puck_goal * puck_goal_distance_reward ) +
+                    (reward_weight_towards_puck * reward_towards_puck)
             )
 
             if record_fn:
@@ -311,9 +309,9 @@ class Match:
             data_temp = dict(team1_state=team1_state, team2_state=team2_state, soccer_state=soccer_state, actions=actions,reward_state=reward_state)
 
 
-            print(f"Soccer ball location: {soccer_ball_loc}")
-            print(f"Puck-goal distance: {puck_goal_distance}")
-            print(f"Reward state: {reward_state}")
+            print(f"Rewards towards puck : {reward_towards_puck}")
+            print(f"Puck-goal distance reward : {puck_goal_distance_reward}")
+            print(f"Total Reward state: {reward_state}")
 
             logging.debug('  race.step  [score = {}]'.format(state.soccer.score))
             if (not race.step([self._pystk.Action(**a) for a in actions]) and num_player) or sum(state.soccer.score) >= max_score:
@@ -375,8 +373,7 @@ def record_manystate(many_agents,parallel=10):
     results = []
     remote_calls = []
     match = Match(use_graphics=False)
-    for i in range(10):
-        remote_calls.append(match.run(TeamRunner(many_agents[i]), team2, 2, 1200, 3))
+    remote_calls.append(match.run(TeamRunner(many_agents[0]), team2, 2, 1200, 3))
 
     return remote_calls
 

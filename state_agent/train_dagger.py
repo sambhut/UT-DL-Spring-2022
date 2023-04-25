@@ -11,26 +11,6 @@ from state_agent.planner import network_features, Planner, network_features_v2
 import os
 
 warnings.filterwarnings("ignore", category=UserWarning)
-################################
-
- # Algorithm Proximal Policy Optimization + Dagger  + Reward shaping
-
- # Reward shapping - https://www.youtube.com/watch?v=xManAGjbx2k&ab_channel=Udacity
- # Proximal Policy Optimization - https://www.youtube.com/watch?v=BvZvx7ENZBw&ab_channel=Weights%26Biases
- # Dagger - Profs lecture
-
-
-# Summary of the Training Algorithm
-
-#Policy Algorithm - Player.py  #Value/critic network - critic.py
-# Similar to Profs code, the training code first collects the trajectories from given model. (Expert/Player - depending on Daggar condition).
-#Then it computes the old log probs and new log probs - to compute the sampling ratio ( unlike policy gradient , PPO doesnt use monte carlo sampling directly, it uses importance samling ratio)
-#to determine clipped objective encouraging more exploration. The clipped objective is tuned using the epsilion param. Higher value of epsilon determines more exploration.
-
-#Steps to tune Algorithm
-# Reward - use more accurate reward shapping mechanism by modifying - custom_runner.py
-# Tune for more exploration using hyperparams such as epsilion.
-
 
 def save_model(model, filename):
     from torch import save
@@ -38,6 +18,23 @@ def save_model(model, filename):
     if isinstance(model, Planner) or isinstance(model, ValueNetwork):
         return save(model.state_dict(), path.join(path.dirname(path.abspath(__file__)), filename))
     raise ValueError("model type '%s' not supported!" % str(type(model)))
+
+
+def compute_gae(rewards, state_values, gamma, lambda_):
+    gae = 0
+    returns = []
+    for t in reversed(range(len(rewards) - 1)):
+        delta = rewards[t] + gamma * state_values[t + 1] - state_values[t]
+        gae = delta + gamma * lambda_ * gae
+        returns.insert(0, gae + state_values[t])
+    # Handle the last step
+    t = len(rewards) - 1
+    delta = rewards[t] - state_values[t]
+    gae = delta + gamma * lambda_ * gae
+    returns.insert(0, gae + state_values[t])
+    return torch.tensor(returns, dtype=torch.float32).cuda()
+
+
 
 
 
@@ -57,36 +54,25 @@ if __name__ == "__main__":
     data = record_manystate(many_action_nets)
     good_initialization = many_action_nets[np.argmax([d[-1]['team1']['highest_distance'] for d in data])]
 
-#####################################################
-    ##  HYPER PARAMS ##
-    n_epochs = 10
-    n_trajectories = 20
-    n_iterations = 20
+
+    n_epochs = 100
+    n_trajectories = 10
+    n_iterations = 50
     batch_size = 128
     n_dagger_iterations = 5
-    #ppo_eps = 0.6
-    # ppo_eps = 0.1
-    # ppo_eps = 0.3
-    # ppo_eps = 0.4
-    # ppo_eps = 0.1
-    # ppo_eps = 0.001
 
     ppo_eps = 0.2
 
-
-    ## todo - epsilion decay and geedy approch
-
-######################################################
 
     expert1_net = copy.deepcopy(good_initialization.model0)
     expert2_net = copy.deepcopy(good_initialization.model1)
 
     player1_net = Planner(17, 32, 3).to(device)
     player2_net = Planner(17, 32, 3).to(device)
-    #dic1 = torch.load('player1_action_model.pt')
-    #dic2 = torch.load('player2_action_model.pt')
-    #player1_net.load_state_dict(dic1)
-    #player2_net.load_state_dict(dic2)
+    dic1 = torch.load('player1_action_model.pt')
+    dic2 = torch.load('player2_action_model.pt')
+    player1_net.load_state_dict(dic1)
+    player2_net.load_state_dict(dic2)
 
 
     best_player1_net = copy.deepcopy(player1_net)
@@ -98,18 +84,17 @@ if __name__ == "__main__":
     value2_model_filepath = "player2_value_model.pt"
 
 
-    action_optim1 = torch.optim.Adam(player1_net.parameters(), lr=0.0001 , weight_decay=1e-5)
-    action_optim2 = torch.optim.Adam(player2_net.parameters(), lr=0.0001, weight_decay=1e-5)
-    value_optim1 = torch.optim.Adam(value_net1.parameters(), lr=0.0001, weight_decay=1e-5)
-    value_optim2 = torch.optim.Adam(value_net2.parameters(), lr=0.0001, weight_decay=1e-5)
+    action_optim1 = torch.optim.Adam(player1_net.parameters(), lr=0.001 , weight_decay=1e-5)
+    action_optim2 = torch.optim.Adam(player2_net.parameters(), lr=0.001, weight_decay=1e-5)
+    value_optim1 = torch.optim.Adam(value_net1.parameters(), lr=0.001, weight_decay=1e-5)
+    value_optim2 = torch.optim.Adam(value_net2.parameters(), lr=0.001, weight_decay=1e-5)
 
     team_rewards = []
     best_team_reward = -np.inf
 
     for dagger_it in range(n_dagger_iterations):
-
         for epoch in range(n_epochs):
-            expert_demonstrations = record_manystate([Team(expert1_net,expert2_net)] * n_trajectories)
+            expert_demonstrations = record_manystate([Team(expert1_net, expert2_net)] * n_trajectories)
 
             if dagger_it > 0:
                 trajectories = record_manystate([Team(player1_net, player2_net)] * n_trajectories)
@@ -238,12 +223,6 @@ if __name__ == "__main__":
             returns1 = torch.as_tensor(returns1, dtype=torch.float32).cuda()
             returns2 = torch.as_tensor(returns2, dtype=torch.float32).cuda()
 
-            ## lILIANS BLGO - NORMALIZE THE RETURNS PLZZZZ
-
-            #returns1 = ((returns1 - returns1.mean()) / returns1.std())
-            #returns2 = ((returns2 - returns2.mean()) / returns2.std())
-
-            #### handle nans
             returns1 = ((returns1 - returns1.mean()) / returns1.std()) + 1e-8
             returns2 = ((returns2 - returns2.mean()) / returns2.std()) + 1e-8
 
@@ -261,17 +240,6 @@ if __name__ == "__main__":
             features1 = torch.stack(features1).cuda()
             features2 = torch.stack(features2).cuda()
 
-            with torch.no_grad():
-                state_values1 = value_net1(features1).squeeze()
-                state_values2 = value_net2(features2).squeeze()
-
-            advantages1 = returns1 - state_values1
-            advantages2 = returns2 - state_values2
-
-            ## CALCULATE ADVANTAGE -   TODO CHECK LILIANS BLOG  TODO - NORMALIZE
-            advantages1 = (advantages1 - advantages1.mean()) / (advantages1.std() + 1e-8)
-            advantages2 = (advantages2 - advantages2.mean()) / (advantages2.std() + 1e-8)
-
             player1_net.train()
             player2_net.train()
             value_net1.train()
@@ -279,11 +247,18 @@ if __name__ == "__main__":
 
             for it in range(n_iterations):
 
-                for player_net, features, actions, returns, advantages, log_probs_old, value_net, value_optim, action_optim in [
-                    (player1_net, features1, actions1, returns1, advantages1, log_probs_old1, value_net1, value_optim1, action_optim1),
-                    (player2_net, features2, actions2, returns2, advantages2, log_probs_old2, value_net2, value_optim2, action_optim2)
+                i = 0
+                for player_net, features, actions, returns, log_probs_old, value_net, value_optim, action_optim in [
+                    (player1_net, features1, actions1, returns1, log_probs_old1, value_net1, value_optim1, action_optim1),
+                    (player2_net, features2, actions2, returns2, log_probs_old2, value_net2, value_optim2, action_optim2)
                 ]:
+                    with torch.no_grad():
+                        state_values = value_net(features1).squeeze()
+                        state_values_next = torch.cat((state_values[i:], torch.tensor([0], device=device)))
 
+                    i = i+1
+                    advantages = compute_gae(returns1, state_values_next, 0.99, 0.95)
+                    advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
                     batch_ids = torch.randint(0, len(returns), (batch_size,))
                     batch_features = features[batch_ids]
