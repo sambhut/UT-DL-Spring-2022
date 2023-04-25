@@ -59,9 +59,9 @@ if __name__ == "__main__":
 
 #####################################################
     ##  HYPER PARAMS ##
-    n_epochs = 100
-    n_trajectories = 10
-    n_iterations = 50
+    n_epochs = 10
+    n_trajectories = 20
+    n_iterations = 20
     batch_size = 128
     n_dagger_iterations = 5
     #ppo_eps = 0.6
@@ -106,14 +106,54 @@ if __name__ == "__main__":
     team_rewards = []
     best_team_reward = -np.inf
 
-    for epoch in range(n_epochs):
-            trajectories = record_manystate([Team(expert1_net,expert2_net)] * n_trajectories)
+    for dagger_it in range(n_dagger_iterations):
+
+        for epoch in range(n_epochs):
+            expert_demonstrations = record_manystate([Team(expert1_net,expert2_net)] * n_trajectories)
+
+            if dagger_it > 0:
+                trajectories = record_manystate([Team(player1_net, player2_net)] * n_trajectories)
+
+                player_trajectories =[]
+                for trajectory in trajectories:
+                    trajectory = trajectory[0]
+                    player_tuple = []
+                    player_labeled_trajectories = []
+                    for i in range(len(trajectory)):
+
+                        features = extract_features(trajectory[i]['team1_state'], trajectory[i]['soccer_state'], trajectory[i]['team2_state'], 0)
+
+                        features = torch.as_tensor(features, dtype=torch.float32).cuda()
+
+
+                        acceleration1, steer1, brake1 = expert1_net(features)
+                        acceleration2, steer2, brake2 = expert2_net(features)
+
+                        player_labeled_step_data = trajectory[i].copy()
+
+                        player_labeled_step_data['actions'][0]['steer'] = steer1
+                        player_labeled_step_data['actions'][0]['acceleration'] = acceleration1
+                        player_labeled_step_data['actions'][0]['brake'] = brake1
+
+                        player_labeled_step_data['actions'][2]['steer'] = steer2
+                        player_labeled_step_data['actions'][2]['acceleration'] = acceleration2
+                        player_labeled_step_data['actions'][2]['brake'] = brake2
+
+                        player_labeled_trajectories.append(player_labeled_step_data)
+                    player_tuple.append(player_labeled_trajectories)
+                    player_tuple.append(trajectory[1])
+                    player_trajectories.append(player_tuple)
+                expert_demonstrations.extend(player_trajectories)
+
+            trajectories = expert_demonstrations
+
 
             rewards = [step_data['reward_state'] for step_tuple in trajectories for step_data in step_tuple[0]]
 
             team_reward = np.mean([step_data['reward_state'] for step_tuple in trajectories for step_data in step_tuple[0]])
             team_rewards.append(team_reward)
 
+            print(f"Dagger iteration = {dagger_it}")
             print(f"Epoch = {epoch}")
             #print(f"Best distance = {np.max([t[-1]['overall_distance'] for t in trajectories])}")
             print(f"Average reward: {np.mean(rewards)}")

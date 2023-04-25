@@ -268,10 +268,10 @@ class Match:
 
             #Soccer ball and goal distance
             soccer_ball_loc = torch.tensor(soccer_state['ball']['location'], dtype=torch.float32)[[0, 2]]
-            #goal_location = torch.tensor([-0.025, 64.5], dtype=torch.float32)
-            goal_location = torch.tensor([0, -64.5], dtype=torch.float32)
+            goal_location = torch.tensor([-0.025, 64.5], dtype=torch.float32)
+            #goal_location = torch.tensor([0, -64.5], dtype=torch.float32)
             goal_ball_distance = np.array(soccer_ball_loc) - np.array(goal_location)
-            puck_goal_distance = np.linalg.norm(goal_ball_distance)
+            puck_goal_distance = - np.linalg.norm(goal_ball_distance)
 
             # rewards towards puck - distance
             total_distance = 0
@@ -301,8 +301,8 @@ class Match:
             reward_weight_puck_direction = 2.5
 
             reward_state = (
-                    (reward_weight_puck_goal * (1 / (puck_goal_distance + 0.1))) +
-                    ((1 / (reward_towards_puck + 0.1)) * reward_weight_towards_puck)
+                    (reward_weight_puck_goal * puck_goal_distance + 1)
+
             )
 
             if record_fn:

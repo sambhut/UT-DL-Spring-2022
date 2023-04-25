@@ -4,18 +4,14 @@ import torch
 class Planner(torch.nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
         super(Planner, self).__init__()
-        self.fc1 = torch.nn.Linear(input_size, hidden_size, bias=False)
-        self.layer_norm1 = torch.nn.LayerNorm(hidden_size)
-        self.relu = torch.nn.LeakyReLU()
-        self.fc2 = torch.nn.Linear(hidden_size, output_size, bias=False)
-        self.layer_norm2 = torch.nn.LayerNorm(output_size)
+        self.fc1 = torch.nn.Linear(input_size, hidden_size)
+        self.relu = torch.nn.ReLU()
+        self.fc2 = torch.nn.Linear(hidden_size, output_size)
 
     def forward(self, x):
         x = self.fc1(x)
-        x = self.layer_norm1(x)
         x = self.relu(x)
         x = self.fc2(x)
-        x = self.layer_norm2(x)
         return x
 
 def limit_period(angle):
@@ -64,6 +60,11 @@ def network_features(player_pos, opponent_pos, ball_pos):
     features_max = features.max()
     normalized_features = (features - features_min) / (features_max - features_min)
 
+
+    features_min = features.min()
+    features_max = features.max()
+    normalized_features = (features - features_min) / (features_max - features_min)
+
     return normalized_features
 
 
@@ -106,4 +107,8 @@ def network_features_v2(player_pos, opponent_pos, ball_pos):
         kart_to_opponent0_angle_difference, kart_to_opponent1_angle_difference,
         kart_to_goal_line_angle_difference], dtype=torch.float32)
 
-    return features
+    features_min = features.min()
+    features_max = features.max()
+    normalized_features = (features - features_min) / (features_max - features_min)
+
+    return normalized_features

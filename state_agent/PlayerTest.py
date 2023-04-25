@@ -20,7 +20,13 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 if __name__ == "__main__":
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
-    action_net = Team()
+    player1_net = Planner(17, 32, 3).to(device)
+    player2_net = Planner(17, 32, 3).to(device)
+    dic1 = torch.load('player1_action_model.pt')
+    dic2 = torch.load('player2_action_model.pt')
+    player1_net.load_state_dict(dic1)
+    player2_net.load_state_dict(dic2)
+    action_net = Team(player1_net,player2_net)
     record_video(action_net)
 
 

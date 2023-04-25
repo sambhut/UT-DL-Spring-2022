@@ -49,8 +49,11 @@ def extract_features(pstate, soccer_state, opponent_state, team_id):
         kart_to_opponent0_angle_difference, kart_to_opponent1_angle_difference,
         kart_to_goal_line_angle_difference], dtype=torch.float32)
 
-    return features
+    features_min = features.min()
+    features_max = features.max()
+    normalized_features = (features - features_min) / (features_max - features_min)
 
+    return normalized_features
 class Team:
     agent_type = 'state'
 
