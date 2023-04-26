@@ -46,16 +46,17 @@ if __name__ == "__main__":
     else:
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
-    value_net1 = ValueNetwork(17, 32).to(device)
-    value_net2 = ValueNetwork(17, 32).to(device)
+    # TODO:check.  Below feature size as 21 after including puck velocity. Find 'puck_velocity' in state_agent/player.py: act()
+    value_net1 = ValueNetwork(21, 32).to(device)
+    value_net2 = ValueNetwork(21, 32).to(device)
     many_action_nets = [Team() for i in range(10)]
     data = record_manystate(many_action_nets)
     good_initialization = many_action_nets[np.argmax([d[-1]['team1']['highest_distance'] for d in data])]
 
 
-    n_epochs = 100
+    n_epochs = 1 #100
     n_trajectories = 1
-    n_iterations = 100
+    n_iterations = 1 #100
     batch_size = 20
     n_dagger_iterations = 5
 
@@ -65,8 +66,10 @@ if __name__ == "__main__":
     expert1_net = copy.deepcopy(good_initialization.model0)
     expert2_net = copy.deepcopy(good_initialization.model1)
 
-    player1_net = Planner(17, 32, 3).to(device)
-    player2_net = Planner(17, 32, 3).to(device)
+    # TODO:check.  Below feature size is made 21 after including puck velocity. Find 'puck_velocity' in state_agent/player.py: act()
+    # TODO:check. Action space has 6 cardinality now, so output_size is made 6. Find ACTION_SPACE in state_agent/player.py
+    player1_net = Planner(21, 32, 6).to(device)
+    player2_net = Planner(21, 32, 6).to(device)
     dic1 = torch.load('player1_action_model.pt')
     dic2 = torch.load('player2_action_model.pt')
     player1_net.load_state_dict(dic1)
@@ -90,7 +93,7 @@ if __name__ == "__main__":
     team_rewards = []
     best_team_reward = -np.inf
 
-    for epoch in range(n_epochs):
+    for epoch in range(n_epochs): #main PPO loop
             trajectories = record_manystate([Team(best_player1_net,best_player2_net)] * n_trajectories)
 
             rewards = [step_data['reward_state'] for step_tuple in trajectories for step_data in step_tuple[0]]
@@ -114,20 +117,26 @@ if __name__ == "__main__":
             actions2 = []
             log_probs_old1 = []
             log_probs_old2 = []
-            for trajectory in trajectories:
+            for trajectory in trajectories: #for every episode trajectory in the batch
                 trajectory = trajectory[0]
-                for i in range(len(trajectory)):
+                for i in range(len(trajectory)): #for every time step
                     returns1.append(trajectory[i]['reward_state'])
                     returns2.append(trajectory[i]['reward_state'])
 
-
+                    # state s_i
                     state_features1 = network_features_v2(trajectory[i]['team1_state'][0]['kart'], trajectory[i]['team2_state'],
                                                       trajectory[i]['soccer_state'])
                     state_features2 = network_features_v2(trajectory[i]['team1_state'][1]['kart'], trajectory[i]['team2_state'],
                                                       trajectory[i]['soccer_state'])
+
+                    # TODO (check). appended below puck velocity into state features
+                    state_features1 = torch.cat([state_features1, trajectory[i]['puck_velocity']])
+                    state_features2 = torch.cat([state_features1, trajectory[i]['puck_velocity']])
+
                     features1.append(torch.as_tensor(state_features1, dtype=torch.float32).cuda().view(-1))
                     features2.append(torch.as_tensor(state_features2, dtype=torch.float32).cuda().view(-1))
 
+                    #action a_i
                     actions1.append({
                         'steer': trajectory[i]['actions'][0]['steer'],
                         'acceleration': trajectory[i]['actions'][0]['acceleration'],
@@ -139,11 +148,16 @@ if __name__ == "__main__":
                         'brake': trajectory[i]['actions'][2]['brake']
                     })
 
-                    with torch.no_grad():
+                    #probs p_i
+                    log_probs_old1.append(trajectory[i][logprobs[0]].unsqueeze(0))
+                    log_probs_old1.append(trajectory[i][logprobs[1]].unsqueeze(0))
+
+                    #TODO: check. Below commented section of code probably not needed anymore
+                    """with torch.no_grad():
                         state_features_tensor1 = torch.as_tensor(state_features1, dtype=torch.float32).cuda().view(1, -1)
                         state_features_tensor2 = torch.as_tensor(state_features2, dtype=torch.float32).cuda().view(1, -1)
-                        output_old1 = player1_net(state_features_tensor1)
-                        output_old2 = player2_net(state_features_tensor2)
+                        #output_old1 = player1_net(state_features_tensor1)
+                        #output_old2 = player2_net(state_features_tensor2)
 
                         action_distribution_old1 = {
                             'steer': torch.distributions.normal.Normal(output_old1[:, 2], 1),
@@ -175,7 +189,7 @@ if __name__ == "__main__":
                     ]).sum()
 
                     log_probs_old1.append(log_prob_old1.unsqueeze(0))
-                    log_probs_old2.append(log_prob_old2.unsqueeze(0))
+                    log_probs_old2.append(log_prob_old2.unsqueeze(0))"""
 
             log_probs_old1 = torch.cat(log_probs_old1).view(-1).cuda()
             log_probs_old2 = torch.cat(log_probs_old2).view(-1).cuda()
@@ -203,6 +217,8 @@ if __name__ == "__main__":
             player2_net.train()
             value_net1.train()
             value_net2.train()
+
+            #PPO loss and 1 gradient descent step
 
             for it in range(n_iterations):
 
