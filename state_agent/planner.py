@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+from torch.distributions import Categorical
 
 class Planner(torch.nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
@@ -7,12 +8,15 @@ class Planner(torch.nn.Module):
         self.fc1 = torch.nn.Linear(input_size, hidden_size)
         self.relu = torch.nn.ReLU()
         self.fc2 = torch.nn.Linear(hidden_size, output_size)
+        self.softmax = torch.nn.Softmax(dim=1)
 
     def forward(self, x):
         x = self.fc1(x)
         x = self.relu(x)
         x = self.fc2(x)
-        return x
+        x = self.softmax(x)
+        dist = Categorical(x)
+        return dist
 
 def limit_period(angle):
     # turn angle into -1 to 1
@@ -74,6 +78,7 @@ def network_features_v2(player_pos, opponent_pos, ball_pos):
     kart_center = torch.tensor(player_pos['location'], dtype=torch.float32)[[0, 2]]
     kart_direction = (kart_front-kart_center) / torch.norm(kart_front-kart_center)
     kart_angle = torch.atan2(kart_direction[1], kart_direction[0])
+    kart_velocity = torch.tensor(player_pos['kart']['velocity'], dtype=torch.float32)[[0, 2]]
 
     puck_center = torch.tensor(ball_pos['ball']['location'], dtype=torch.float32)[[0, 2]]
     kart_to_puck_direction = (puck_center - kart_center) / torch.norm(puck_center-kart_center)
@@ -102,9 +107,12 @@ def network_features_v2(player_pos, opponent_pos, ball_pos):
     kart_to_goal_line_angle_difference = limit_period((kart_angle - puck_to_goal_line_angle)/np.pi)
 
     features = torch.tensor([kart_center[0], kart_center[1], kart_angle, kart_to_puck_angle, opponent_center0[0],
-        opponent_center0[1], opponent_center1[0], opponent_center1[1], kart_to_opponent0_angle, kart_to_opponent1_angle,
-        goal_line_center[0], goal_line_center[1], puck_to_goal_line_angle, kart_to_puck_angle_difference,
-        kart_to_opponent0_angle_difference, kart_to_opponent1_angle_difference,
-        kart_to_goal_line_angle_difference], dtype=torch.float32)
+                             opponent_center0[1], opponent_center1[0], opponent_center1[1], kart_to_opponent0_angle,
+                             kart_to_opponent1_angle,
+                             goal_line_center[0], goal_line_center[1], puck_to_goal_line_angle,
+                             kart_to_puck_angle_difference,
+                             kart_to_opponent0_angle_difference, kart_to_opponent1_angle_difference,
+                             kart_to_goal_line_angle_difference,
+                             kart_velocity[0], kart_velocity[1]], dtype=torch.float32)
 
     return features
