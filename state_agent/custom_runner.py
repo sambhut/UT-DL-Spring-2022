@@ -214,6 +214,7 @@ class Match:
         reward_puck_kart_threshold = 5
         total_rewards = 0
 
+        old_puck_center = torch.Tensor(initial_ball_location[0], initial_ball_location[1])
         for it in range(max_frames):
             logging.debug('iteration {} / {}'.format(it, MAX_FRAMES))
             state.update()
@@ -229,16 +230,10 @@ class Match:
 
             # Have each team produce actions (in parallel)
             if t1_can_act:
-                if t1_type == 'image':
-                    team1_actions_delayed = self._r(team1.act)(team1_state, team1_images)
-                else:
-                    team1_actions_delayed = self._r(team1.act)(team1_state, team2_state, soccer_state)
+                team1_actions_delayed, logprobs = self._r(team1.act)(team1_state, team2_state, soccer_state)
 
             if t2_can_act:
-                if t2_type == 'image':
-                    team2_actions_delayed = self._r(team2.act)(team2_state, team2_images)
-                else:
-                    team2_actions_delayed = self._r(team2.act)(team2_state, team1_state, soccer_state)
+                team2_actions_delayed = self._r(team2.act)(team2_state, team1_state, soccer_state)
 
             # Wait for the actions to finish
             team1_actions = self._g(team1_actions_delayed) if t1_can_act else None
@@ -303,10 +298,13 @@ class Match:
                     (reward_weight_towards_puck * (1/(distance + 0.01)) * reward_towards_puck)
             )
 
+            #velocities
+            puck_velocity = soccer_ball_loc - old_puck_center
+
             if record_fn:
                 self._r(record_fn)(team1_state, team2_state, soccer_state=soccer_state, actions=actions,
                                    team1_images=team1_images, team2_images=team2_images)
-            data_temp = dict(team1_state=team1_state, team2_state=team2_state, soccer_state=soccer_state, actions=actions,reward_state=reward_state)
+            data_temp = dict(team1_state=team1_state, team2_state=team2_state, soccer_state=soccer_state, actions=actions,reward_state=reward_state, logprobs=logprobs, puck_velocity=puck_velocity)
 
 
             print(f"Rewards towards puck : {reward_towards_puck}")
@@ -317,11 +315,12 @@ class Match:
             if (not race.step([self._pystk.Action(**a) for a in actions]) and num_player) or sum(state.soccer.score) >= max_score:
                 break
             data.append(data_temp)
+            old_puck_center = soccer_ball_loc
 
         race.stop()
         del race
 
-        return data,payload
+        return data, payload
 
     def wait(self, x):
         return x
@@ -376,22 +375,3 @@ def record_manystate(many_agents,parallel=10):
     remote_calls.append(match.run(TeamRunner(many_agents[0]), team2, 2, 1200, 3))
 
     return remote_calls
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
