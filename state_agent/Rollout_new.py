@@ -115,17 +115,26 @@ class Rollout_new:
                                 (initial_ball_velocity[0], 0, initial_ball_velocity[1]))
 
         # Add some randomness to the starting location
-        if train == True:
-            rand1 = random.randrange(2)
-            rand2 = random.randrange(2)
+        if train is True:
+            rand1 = random.randrange(5)
+            rand2 = random.randrange(5)
+            rand3 = random.randrange(5)
+            rand4 = random.randrange(5)
             print("rand1 is ", rand1)
             print("rand2 is ", rand2)
+            print("rand3 is ", rand3)
+            print("rand4 is ", rand4)
             team0_state = [to_native(p) for p in state.players[0::2]]
             team1_state = [to_native(p) for p in state.players[1::2]]
             player_0_start_location = team0_state[0]["kart"]["location"]
             player_1_start_location = team0_state[1]["kart"]["location"]
             player_2_start_location = team1_state[0]["kart"]["location"]
             player_3_start_location = team1_state[1]["kart"]["location"]
+
+            #print(player_0_start_location)
+
+            state.set_ball_location((initial_ball_location[0]+rand3, 1, initial_ball_location[1]+rand4),
+                                    (initial_ball_velocity[0], 0, initial_ball_velocity[1]))
 
             #print("player_0_start_location is ", player_0_start_location)
             #print("player_1_start_location is ", player_1_start_location)
@@ -152,13 +161,6 @@ class Rollout_new:
             team1_state = [to_native(p) for p in state.players[1::2]]
             soccer_state = to_native(state.soccer)
             agent_data = {'player_state': team0_state, 'opponent_state': team1_state, 'soccer_state': soccer_state}
-
-            # print some data every 100 frames
-            if (it%200) == 0:
-                print("iteration {%d} / {%d}" % (it, max_frames))
-                print("player kart0 location is ", team0_state[0]["kart"]["location"])
-                print("opponent kart0 is ", team1_state[0]["kart"]["location"])
-                print("soccer ball location is ", soccer_state['ball']['location'])
 
             # Have each team produce actions (in parallel)
             t0_can_act = True  # True for now, or we can use _check function in runner
@@ -205,13 +207,14 @@ class Rollout_new:
             # Gather velocity of puck
             current_puck_center = torch.tensor(soccer_state['ball']['location'], dtype=torch.float32)[[0, 2]]
             agent_data['ball_velocity'] = current_puck_center - old_puck_center
+
             # print some data every 100 frames
-            if (it%100) == 0:
+            if (it%200) == 0 and train is False:
+                print("train is ", train)
                 print("iteration {%d} / {%d}" % (it, max_frames))
-                print("team0 state is ", team0_state[0]["kart"]["location"])
-                print("team1 state is ", team1_state[0]["kart"]["location"])
-                print("soccer state is ", soccer_state['ball']['location'])
-                print("ball velocity is ", agent_data['ball_velocity'])
+                print("player kart0 location is ", team0_state[0]["kart"]["location"])
+                print("opponent kart0 is ", team1_state[0]["kart"]["location"])
+                print("soccer ball location is ", soccer_state['ball']['location'])
 
             # Save all relevant data
             data.append(agent_data)
@@ -230,7 +233,7 @@ def rollout_many(many_agents, **kwargs):
     for i, agent in enumerate(many_agents):
         print("performing rollout number ", i)
         rollout = Rollout_new(many_agents[i], **kwargs)
-        data.append(rollout.__call__(**kwargs, train=False))
+        data.append(rollout.__call__(**kwargs, train=True))
     return data
 
 if __name__ == "__main__":

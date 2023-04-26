@@ -108,7 +108,15 @@ class Team:
             features = network_features(pstate, opponent_state, soccer_state)
             features = torch.cat([features, puck_velocity])
             acceleration, steer, brake = self.model(features)
-            acceleration = torch.sigmoid(abs(acceleration))
-            brake = brake > 0.5
-            actions.append(dict(acceleration=acceleration, steer=steer, brake=brake, nitro=True))
+
+            brake_threshold = 0.7
+            if brake > brake_threshold:
+                brake = True
+                acceleration = 0.0
+            else:
+                brake = False
+
+            actions.append(dict(acceleration=acceleration, steer=steer, brake=brake, nitro=True))  # drift=True))
+            # update puck center
+            self.old_puck_center = current_puck_center
         return actions

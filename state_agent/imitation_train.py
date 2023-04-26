@@ -78,14 +78,11 @@ def train():
                 print(batch_labels[:, :2].size())
                 print(batch_labels[:, 2])
 
-            o = action_net(batch_features)
-            acc_loss_val = mseLoss(o[:, 0], batch_labels[:, 0])
-            steer_loss_val = mseLoss(o[:, 1], batch_labels[:, 1])
-            brake_loss_val = bceLoss(o[:, -1], batch_labels[:, -1])
+            o_acc, o_steer, o_brake = action_net(batch_features)
+            acc_loss_val = mseLoss(o_acc[:, 0], batch_labels[:, 0])
+            steer_loss_val = mseLoss(o_steer[:, 0], batch_labels[:, 1])
+            brake_loss_val = bceLoss(o_brake[:, 0], batch_labels[:, -1])
             loss_val = 0.9*acc_loss_val + steer_loss_val + 0.1*brake_loss_val
-
-            if iteration == 0 and epoch == 0:
-                print(o.size())
 
             print("loss in iteration %d, epoch %d is %f" % (iteration/batch_size, epoch, loss_val))
 

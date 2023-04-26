@@ -18,9 +18,11 @@ def train():
     n_epochs = 20
     n_trajectories = 10
     batch_size = 128
-    learning_rate = 0.001
+    learning_rate1 = 0.001
+    learning_rate2 = 0.000001
     #weight_decay = 1e-5
-    weight_decay = 0
+    weight_decay1 = 0
+    weight_decay2 = 0
 
     expert_agent = Jurgen()
     #expert_agent = Jurgen()
@@ -29,7 +31,11 @@ def train():
     action_net = Planner(13, 128, 3).to(device)
 
     # Create the optimizer
-    optimizer = torch.optim.Adam(action_net.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    optimizer1 = torch.optim.Adam(action_net.parameters(), lr=learning_rate1, weight_decay=weight_decay1)
+    #optimizer1 = torch.optim.SGD(action_net.parameters(), lr=learning_rate1, momentum=0.9, weight_decay=weight_decay1)
+
+    optimizer2 = torch.optim.Adam(action_net.parameters(), lr=learning_rate2, weight_decay=weight_decay2)
+    #optimizer2 = torch.optim.SGD(action_net.parameters(), lr=learning_rate2, momentum=0.9, weight_decay=weight_decay2)
 
     # Create the losses
     mseLoss = torch.nn.MSELoss()
@@ -77,19 +83,19 @@ def train():
             batch_features = train_features_imitation[batch_ids]
             batch_labels = train_labels_imitation[batch_ids]
 
-            o = action_net(batch_features)
-            acc_loss_val = mseLoss(o[:, 0], batch_labels[:, 0])
-            steer_loss_val = mseLoss(o[:, 1], batch_labels[:, 1])
-            brake_loss_val = bceLoss(o[:, -1], batch_labels[:, -1])
+            o_acc, o_steer, o_brake = action_net(batch_features)
+            acc_loss_val = mseLoss(o_acc[:, 0], batch_labels[:, 0])
+            steer_loss_val = mseLoss(o_steer[:, 0], batch_labels[:, 1])
+            brake_loss_val = bceLoss(o_brake[:, 0], batch_labels[:, -1])
             loss_val = 0.9*acc_loss_val + steer_loss_val + 0.1*brake_loss_val
 
             print("imitation loss in iteration %d, epoch %d is %f" % (iteration/batch_size, epoch, loss_val))
 
             global_step += 1
 
-            optimizer.zero_grad()
+            optimizer1.zero_grad()
             loss_val.backward()
-            optimizer.step()
+            optimizer1.step()
 
     action_net.to("cpu")
 
@@ -150,10 +156,10 @@ def train():
             batch_features = total_train_features[batch_ids]
             batch_labels = total_train_labels[batch_ids]
 
-            o = action_net(batch_features)
-            acc_loss_val = mseLoss(o[:, 0], batch_labels[:, 0])
-            steer_loss_val = mseLoss(o[:, 1], batch_labels[:, 1])
-            brake_loss_val = bceLoss(o[:, -1], batch_labels[:, -1])
+            o_acc, o_steer, o_brake = action_net(batch_features)
+            acc_loss_val = mseLoss(o_acc[:, 0], batch_labels[:, 0])
+            steer_loss_val = mseLoss(o_steer[:, 0], batch_labels[:, 1])
+            brake_loss_val = bceLoss(o_brake[:, 0], batch_labels[:, -1])
 
             # Assign different weights for each loss
             loss_val = 0.9*acc_loss_val + steer_loss_val + 0.1*brake_loss_val
@@ -162,9 +168,9 @@ def train():
 
             global_step += 1
 
-            optimizer.zero_grad()
+            optimizer2.zero_grad()
             loss_val.backward()
-            optimizer.step()
+            optimizer2.step()
 
     action_net.to("cpu")
 

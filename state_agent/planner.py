@@ -1,9 +1,12 @@
 import numpy as np
 import torch
+import torch.nn as nn
 
 class Planner(torch.nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
         super(Planner, self).__init__()
+
+        """
         self.fc1 = torch.nn.Linear(input_size, hidden_size)
         self.BN1 = torch.nn.BatchNorm1d(hidden_size)
         self.relu = torch.nn.ReLU()
@@ -12,13 +15,52 @@ class Planner(torch.nn.Module):
         self.fc3 = torch.nn.Linear(64, 32)
         self.BN3 = torch.nn.BatchNorm1d(32)
         self.fc4 = torch.nn.Linear(32, output_size, bias=False)
+        self.sigmoid 
+        """
+        self.accNetwork = torch.nn.Sequential(
+            torch.nn.Linear(input_size, hidden_size),
+            torch.nn.BatchNorm1d(hidden_size),
+            torch.nn.ReLU(),
+            torch.nn.Linear(hidden_size, 64),
+            torch.nn.BatchNorm1d(64),
+            torch.nn.Linear(64, 32),
+            torch.nn.BatchNorm1d(32),
+            torch.nn.Linear(32, 1, bias=False),
+            nn.Sigmoid() # acc is in range [0,1]
+        )
+
+        self.steerNetwork = torch.nn.Sequential(
+            torch.nn.Linear(input_size, hidden_size),
+            torch.nn.BatchNorm1d(hidden_size),
+            torch.nn.ReLU(),
+            torch.nn.Linear(hidden_size, 64),
+            torch.nn.BatchNorm1d(64),
+            torch.nn.Linear(64, 32),
+            torch.nn.BatchNorm1d(32),
+            torch.nn.Linear(32, 1, bias=False),
+            nn.Tanh() # steer is in range [-1, 1]
+        )
+
+        self.brakeNetwork = torch.nn.Sequential(
+            torch.nn.Linear(input_size, hidden_size),
+            torch.nn.BatchNorm1d(hidden_size),
+            torch.nn.ReLU(),
+            torch.nn.Linear(hidden_size, 64),
+            torch.nn.BatchNorm1d(64),
+            torch.nn.Linear(64, 32),
+            torch.nn.BatchNorm1d(32),
+            torch.nn.Linear(32, 1, bias=False),
+            nn.Sigmoid() # brake is either 0 or 1
+        )
 
 
     def forward(self, x):
+        #x = self.network(x)
+        #print(x.shape, type(x))
         out = x
         if out.dim() == 1:
             out = out.unsqueeze(0)
-        out = self.fc1(out)
+        """out = self.fc1(out)
         out = self.BN1(out)
         out = self.relu(out)
         out = self.fc2(out)
@@ -27,10 +69,20 @@ class Planner(torch.nn.Module):
         out = self.fc3(out)
         out = self.BN3(out)
         out = self.relu(out)
-        out = self.fc4(out)
-        if out.dim() != x.dim():
-            out = out.squeeze(0)
-        return out
+        out = self.fc4(out)"""
+        accOut = steerOut = brakeOut = out
+        accOut = self.accNetwork(accOut)
+        steerOut = self.steerNetwork(steerOut)
+        brakeOut = self.brakeNetwork(brakeOut)
+
+        if accOut.dim() != x.dim():
+            accOut = accOut.squeeze(0)
+        if steerOut.dim() != x.dim():
+            steerOut = steerOut.squeeze(0)
+        if brakeOut.dim() != x.dim():
+            brakeOut = brakeOut.squeeze(0)
+
+        return accOut, steerOut, brakeOut
 
 
 def limit_period(angle):
