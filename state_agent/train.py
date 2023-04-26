@@ -20,6 +20,22 @@ def save_model(model, filename):
     raise ValueError("model type '%s' not supported!" % str(type(model)))
 
 
+def compute_gae(rewards, state_values, gamma, lambda_):
+    gae = 0
+    returns = []
+    for t in reversed(range(len(rewards) - 1)):
+        delta = rewards[t] + gamma * state_values[t + 1] - state_values[t]
+        gae = delta + gamma * lambda_ * gae
+        returns.insert(0, gae + state_values[t])
+    # Handle the last step
+    t = len(rewards) - 1
+    delta = rewards[t] - state_values[t]
+    gae = delta + gamma * lambda_ * gae
+    returns.insert(0, gae + state_values[t])
+    return torch.tensor(returns, dtype=torch.float32).cuda()
+
+
+
 if __name__ == "__main__":
     device = None
     if torch.backends.mps.is_available():
@@ -37,10 +53,10 @@ if __name__ == "__main__":
     good_initialization = many_action_nets[np.argmax([d[-1]['team1']['highest_distance'] for d in data])]
 
 
-    n_epochs = 200
+    n_epochs = 100
     n_trajectories = 1
-    n_iterations = 50
-    batch_size = 10
+    n_iterations = 100
+    batch_size = 20
     n_dagger_iterations = 5
 
     ppo_eps = 0.2
@@ -51,14 +67,14 @@ if __name__ == "__main__":
 
     player1_net = Planner(17, 32, 3).to(device)
     player2_net = Planner(17, 32, 3).to(device)
-    #dic1 = torch.load('player1_action_model.pt')
-    #dic2 = torch.load('player2_action_model.pt')
-    #player1_net.load_state_dict(dic1)
-    #player2_net.load_state_dict(dic2)
+    dic1 = torch.load('player1_action_model.pt')
+    dic2 = torch.load('player2_action_model.pt')
+    player1_net.load_state_dict(dic1)
+    player2_net.load_state_dict(dic2)
 
 
-    best_player1_net = copy.deepcopy(player1_net)
-    best_player2_net = copy.deepcopy(player2_net)
+    best_player1_net = copy.deepcopy(expert1_net)
+    best_player2_net = copy.deepcopy(expert2_net)
 
     player1_model_filepath = "player1_action_model.pt"
     player2_model_filepath = "player2_action_model.pt"
@@ -75,7 +91,7 @@ if __name__ == "__main__":
     best_team_reward = -np.inf
 
     for epoch in range(n_epochs):
-            trajectories = record_manystate([Team(expert1_net,expert2_net)] * n_trajectories)
+            trajectories = record_manystate([Team(best_player1_net,best_player2_net)] * n_trajectories)
 
             rewards = [step_data['reward_state'] for step_tuple in trajectories for step_data in step_tuple[0]]
 
@@ -200,7 +216,7 @@ if __name__ == "__main__":
                         state_values_next = torch.cat((state_values[i:], torch.tensor([0], device=device)))
 
                     i = i+1
-                    advantages = returns - state_values_next
+                    advantages = compute_gae(returns, state_values_next, 0.99, 0.95)
                     advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
                     batch_ids = torch.randint(0, len(returns), (batch_size,))
@@ -240,11 +256,11 @@ if __name__ == "__main__":
                     action_loss.backward()
                     action_optim.step()
 
-            if team_reward > best_team_reward:
-                best_player1_net = copy.deepcopy(player1_net)
-                best_player2_net = copy.deepcopy(player2_net)
-                best_team_reward = team_reward
 
+            best_player1_net = copy.deepcopy(player1_net)
+            best_player2_net = copy.deepcopy(player2_net)
+            if team_reward > best_team_reward:
+                best_team_reward = team_reward
                 save_model(best_player1_net, player1_model_filepath)
                 save_model(best_player2_net, player2_model_filepath)
                 save_model(value_net1, value1_model_filepath)

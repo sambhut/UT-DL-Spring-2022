@@ -210,9 +210,10 @@ class Match:
             }
         }
 
-        threshold_goal_distance = 2
-        reward_puck_kart_threshold = 1.0
+        threshold_goal_distance = 50
+        reward_puck_kart_threshold = 5
         total_rewards = 0
+
         for it in range(max_frames):
             logging.debug('iteration {} / {}'.format(it, MAX_FRAMES))
             state.update()
@@ -283,7 +284,7 @@ class Match:
 
 
             # rewards towards puck - distance
-
+            distance = 0
             for player_info in team1_state:
                 distance = self.euclidean_distance(
                     torch.tensor(player_info['kart']['location'], dtype=torch.float32)[[0, 2]], soccer_ball_loc)
@@ -295,12 +296,11 @@ class Match:
 
 
             reward_weight_puck_goal = 2
-            reward_weight_towards_puck = 3.5
+            reward_weight_towards_puck = 1.5
             reward_weight_puck_direction = 2.5
 
             reward_state = (
-                    (reward_weight_puck_goal * puck_goal_distance_reward ) +
-                    (reward_weight_towards_puck * reward_towards_puck)
+                    (reward_weight_towards_puck * (1/(distance + 0.01)) * reward_towards_puck)
             )
 
             if record_fn:

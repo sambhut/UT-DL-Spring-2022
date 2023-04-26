@@ -107,8 +107,4 @@ def network_features_v2(player_pos, opponent_pos, ball_pos):
         kart_to_opponent0_angle_difference, kart_to_opponent1_angle_difference,
         kart_to_goal_line_angle_difference], dtype=torch.float32)
 
-    features_min = features.min()
-    features_max = features.max()
-    normalized_features = (features - features_min) / (features_max - features_min)
-
-    return normalized_features
+    return features

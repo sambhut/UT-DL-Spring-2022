@@ -9,55 +9,56 @@ def limit_period(angle):
     # turn angle into -1 to 1
     return angle - torch.floor(angle / 2 + 0.5) * 2
 
+
 def extract_features(pstate, soccer_state, opponent_state, team_id):
     # features of ego-vehicle
     kart_front = torch.tensor(pstate['kart']['front'], dtype=torch.float32)[[0, 2]]
     kart_center = torch.tensor(pstate['kart']['location'], dtype=torch.float32)[[0, 2]]
-    kart_direction = (kart_front-kart_center) / torch.norm(kart_front-kart_center)
+    kart_direction = (kart_front - kart_center) / torch.norm(kart_front - kart_center)
     kart_angle = torch.atan2(kart_direction[1], kart_direction[0])
 
     # features of soccer
     puck_center = torch.tensor(soccer_state['ball']['location'], dtype=torch.float32)[[0, 2]]
-    kart_to_puck_direction = (puck_center - kart_center) / torch.norm(puck_center-kart_center)
+    kart_to_puck_direction = (puck_center - kart_center) / torch.norm(puck_center - kart_center)
     kart_to_puck_angle = torch.atan2(kart_to_puck_direction[1], kart_to_puck_direction[0])
 
-    kart_to_puck_angle_difference = limit_period((kart_angle - kart_to_puck_angle)/np.pi)
+    kart_to_puck_angle_difference = limit_period((kart_angle - kart_to_puck_angle) / np.pi)
 
     # features of opponents
     opponent_center0 = torch.tensor(opponent_state[0]['kart']['location'], dtype=torch.float32)[[0, 2]]
     opponent_center1 = torch.tensor(opponent_state[1]['kart']['location'], dtype=torch.float32)[[0, 2]]
 
-    kart_to_opponent0 = (opponent_center0 - kart_center) / torch.norm(opponent_center0-kart_center)
-    kart_to_opponent1 = (opponent_center1 - kart_center) / torch.norm(opponent_center1-kart_center)
+    kart_to_opponent0 = (opponent_center0 - kart_center) / torch.norm(opponent_center0 - kart_center)
+    kart_to_opponent1 = (opponent_center1 - kart_center) / torch.norm(opponent_center1 - kart_center)
 
     kart_to_opponent0_angle = torch.atan2(kart_to_opponent0[1], kart_to_opponent0[0])
     kart_to_opponent1_angle = torch.atan2(kart_to_opponent1[1], kart_to_opponent1[0])
 
-    kart_to_opponent0_angle_difference = limit_period((kart_angle - kart_to_opponent0_angle)/np.pi)
-    kart_to_opponent1_angle_difference = limit_period((kart_angle - kart_to_opponent1_angle)/np.pi)
+    kart_to_opponent0_angle_difference = limit_period((kart_angle - kart_to_opponent0_angle) / np.pi)
+    kart_to_opponent1_angle_difference = limit_period((kart_angle - kart_to_opponent1_angle) / np.pi)
 
     # features of score-line
     goal_line_center = torch.tensor(soccer_state['goal_line'][team_id], dtype=torch.float32)[:, [0, 2]].mean(dim=0)
 
-    puck_to_goal_line = (goal_line_center-puck_center) / torch.norm(goal_line_center-puck_center)
+    puck_to_goal_line = (goal_line_center - puck_center) / torch.norm(goal_line_center - puck_center)
     puck_to_goal_line_angle = torch.atan2(puck_to_goal_line[1], puck_to_goal_line[0])
-    kart_to_goal_line_angle_difference = limit_period((kart_angle - puck_to_goal_line_angle)/np.pi)
+    kart_to_goal_line_angle_difference = limit_period((kart_angle - puck_to_goal_line_angle) / np.pi)
 
     features = torch.tensor([kart_center[0], kart_center[1], kart_angle, kart_to_puck_angle, opponent_center0[0],
-        opponent_center0[1], opponent_center1[0], opponent_center1[1], kart_to_opponent0_angle, kart_to_opponent1_angle,
-        goal_line_center[0], goal_line_center[1], puck_to_goal_line_angle, kart_to_puck_angle_difference,
-        kart_to_opponent0_angle_difference, kart_to_opponent1_angle_difference,
-        kart_to_goal_line_angle_difference], dtype=torch.float32)
+                             opponent_center0[1], opponent_center1[0], opponent_center1[1], kart_to_opponent0_angle,
+                             kart_to_opponent1_angle,
+                             goal_line_center[0], goal_line_center[1], puck_to_goal_line_angle,
+                             kart_to_puck_angle_difference,
+                             kart_to_opponent0_angle_difference, kart_to_opponent1_angle_difference,
+                             kart_to_goal_line_angle_difference], dtype=torch.float32)
 
-    features_min = features.min()
-    features_max = features.max()
-    normalized_features = (features - features_min) / (features_max - features_min)
+    return features
 
-    return normalized_features
+
 class Team:
     agent_type = 'state'
 
-    def __init__(self,player1=None,player2=None):
+    def __init__(self, player1=None, player2=None):
         """
           TODO: Load your agent here. Load network parameters, and other parts of our model
           We will call this function with default arguments only
@@ -66,7 +67,7 @@ class Team:
 
         self.team = None
         self.num_players = None
-        if player1 is None or player2 is None :
+        if player1 is None or player2 is None:
             self.model0 = torch.jit.load(path.join(path.dirname(path.abspath(__file__)), 'geoffrey_agent0.pt'))
             self.model1 = torch.jit.load(path.join(path.dirname(path.abspath(__file__)), 'geoffrey_agent1.pt'))
         else:
@@ -127,22 +128,30 @@ class Team:
         # TODO: Change me. I'm just cruising straight
         actions = []
         for player_id, pstate in enumerate(player_state):
-            features = extract_features(pstate, soccer_state, opponent_state, 1 )
+            features = extract_features(pstate, soccer_state, opponent_state, 1)
             input_tensor = features.cuda()
             if player_id % 2 == 0:
-                output= self.model0(input_tensor)
+                output = self.model0(input_tensor)
             else:
                 output = self.model1(input_tensor)
 
             # Normalize brake and acceleration values
             brake_f = torch.sigmoid(output[0]).item()
             acceleration_f = torch.sigmoid(output[1]).item()
-            steer_f = torch.tanh(output[2]).item()
-            steer_f = np.clip(steer_f, -1, 1)
+            total = brake_f + acceleration_f
 
+            brake = brake_f / total
+            acceleration = acceleration_f / total
+
+            if brake > acceleration:
+                brake_f = 1
+                acceleration_f = 0
+            else:
+                brake_f = 0
+                acceleration_f = acceleration_f
 
             # Use continuous steering value
-            #steering_gain = torch.tanh(output[2]).item()
-            #steer_f = np.clip(steering_gain, -1, 1)
+            steering_gain = torch.tanh(output[2]).item()
+            steer_f = np.clip(steering_gain, -1, 1)
             actions.append(dict(acceleration=acceleration_f, steer=steer_f, brake=brake_f))
         return actions
