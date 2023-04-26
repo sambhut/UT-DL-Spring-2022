@@ -1,8 +1,11 @@
 from os import path
 import numpy as np
 import torch
+from torch.distributions import Categorical
 
 from state_agent.planner import Planner
+
+ACTION_SPACE = [(1,0,-1), (1,0,0), (1,0,1), (0,1,-1), (0,1,0), (0,1,1)] # all possible (brake, acc, steer) tuples, i.e. our action space
 
 
 def limit_period(angle):
@@ -16,6 +19,7 @@ def extract_features(pstate, soccer_state, opponent_state, team_id):
     kart_center = torch.tensor(pstate['kart']['location'], dtype=torch.float32)[[0, 2]]
     kart_direction = (kart_front - kart_center) / torch.norm(kart_front - kart_center)
     kart_angle = torch.atan2(kart_direction[1], kart_direction[0])
+    kart_velocity = torch.tensor(player_pos['kart']['velocity'], dtype=torch.float32)[[0, 2]]
 
     # features of soccer
     puck_center = torch.tensor(soccer_state['ball']['location'], dtype=torch.float32)[[0, 2]]
@@ -50,7 +54,8 @@ def extract_features(pstate, soccer_state, opponent_state, team_id):
                              goal_line_center[0], goal_line_center[1], puck_to_goal_line_angle,
                              kart_to_puck_angle_difference,
                              kart_to_opponent0_angle_difference, kart_to_opponent1_angle_difference,
-                             kart_to_goal_line_angle_difference], dtype=torch.float32)
+                             kart_to_goal_line_angle_difference,
+                             kart_velocity[0], kart_velocity[1]], dtype=torch.float32)
 
     return features
 
@@ -67,6 +72,7 @@ class Team:
 
         self.team = None
         self.num_players = None
+        self.old_puck_center = None
         if player1 is None or player2 is None:
             self.model0 = torch.jit.load(path.join(path.dirname(path.abspath(__file__)), 'geoffrey_agent0.pt'))
             self.model1 = torch.jit.load(path.join(path.dirname(path.abspath(__file__)), 'geoffrey_agent1.pt'))
@@ -92,6 +98,7 @@ class Team:
            TODO: feel free to edit or delete any of the code below
         """
         self.team, self.num_players = team, num_players
+        self.old_puck_center = torch.Tensor([0, 0])
         return ['tux'] * num_players
 
     def act(self, player_state, opponent_state, soccer_state):
@@ -126,32 +133,29 @@ class Team:
                  steer:        float -1..1 steering angle
         """
         # TODO: Change me. I'm just cruising straight
+
+        #compute puck velocity (will be part of feature space)
+        current_puck_center = torch.tensor(soccer_state['ball']['location'], dtype=torch.float32)[[0, 2]]
+        puck_velocity = current_puck_center - self.old_puck_center
+
         actions = []
+        logprobs = []
         for player_id, pstate in enumerate(player_state):
             features = extract_features(pstate, soccer_state, opponent_state, 1)
+            features = torch.cat([features, puck_velocity]) #TODO:check. Incorporated this somehow both here and in custom runner!
             input_tensor = features.cuda()
             if player_id % 2 == 0:
-                output = self.model0(input_tensor)
+                output_dist = self.model0(input_tensor)
             else:
-                output = self.model1(input_tensor)
+                output_dist = self.model1(input_tensor)
 
-            # Normalize brake and acceleration values
-            brake_f = torch.sigmoid(output[0]).item()
-            acceleration_f = torch.sigmoid(output[1]).item()
-            total = brake_f + acceleration_f
+            # Sample the action from output probabilities
+            #dist = Categorical(output_probs)
+            action_index = output_dist.sample()          #tensor with 1 value representing index in action space
+            action_tuple = ACTION_SPACE[action_index]    #tuple of 3 values
+            actions.append(dict(acceleration=action_tuple[1], steer=action_tuple[2], brake=action_tuple[0]))
 
-            brake = brake_f / total
-            acceleration = acceleration_f / total
-
-            if brake > acceleration:
-                brake_f = 1
-                acceleration_f = 0
-            else:
-                brake_f = 0
-                acceleration_f = acceleration_f
-
-            # Use continuous steering value
-            steering_gain = torch.tanh(output[2]).item()
-            steer_f = np.clip(steering_gain, -1, 1)
-            actions.append(dict(acceleration=acceleration_f, steer=steer_f, brake=brake_f))
-        return actions
+            # prob required for PPO (only for training) # !Caution: remove when you run actual grader
+            logprob = dist.log_prob(action_index).item()
+            logprobs.append(log_prob)
+        return actions, logprobs
