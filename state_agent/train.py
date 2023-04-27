@@ -54,13 +54,12 @@ if __name__ == "__main__":
     data = record_manystate(many_action_nets)
     good_initialization = many_action_nets[np.argmax([d[-1]['team1']['highest_distance'] for d in data])]"""
 
-
-    n_epochs = 1 #100
-    n_trajectories = 1
-    n_iterations = 1 #100
-    batch_size = 20
-    n_dagger_iterations = 5
-
+    # PPO training hyperparams -- vary and experiment.
+    n_epochs = 20
+    n_trajectories = 10  # so, no. of timesteps in each epoch = MAX_FRAMES_TRAIN*10  (which is 100*10=1000 for now)
+    batch_size = 128  # maybe keep this constant
+    n_iterations = 8  # vary this to match: n_trajectories * MAX_FRAMES_TRAIN = batch_size * n_iterations
+                      # currently: 100*10 ~ 128*8
     ppo_eps = 0.2
 
 
