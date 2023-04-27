@@ -8,7 +8,7 @@ class Planner(torch.nn.Module):
         self.fc1 = torch.nn.Linear(input_size, hidden_size)
         self.relu = torch.nn.ReLU()
         self.fc2 = torch.nn.Linear(hidden_size, output_size)
-        self.softmax = torch.nn.Softmax(dim=1)
+        self.softmax = torch.nn.Softmax()
 
     def forward(self, x):
         x = self.fc1(x)
@@ -78,7 +78,7 @@ def network_features_v2(player_pos, opponent_pos, ball_pos):
     kart_center = torch.tensor(player_pos['location'], dtype=torch.float32)[[0, 2]]
     kart_direction = (kart_front-kart_center) / torch.norm(kart_front-kart_center)
     kart_angle = torch.atan2(kart_direction[1], kart_direction[0])
-    kart_velocity = torch.tensor(player_pos['kart']['velocity'], dtype=torch.float32)[[0, 2]]
+    kart_velocity = torch.tensor(player_pos['velocity'], dtype=torch.float32)[[0, 2]]
 
     puck_center = torch.tensor(ball_pos['ball']['location'], dtype=torch.float32)[[0, 2]]
     kart_to_puck_direction = (puck_center - kart_center) / torch.norm(puck_center-kart_center)
