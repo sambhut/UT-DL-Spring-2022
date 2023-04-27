@@ -8,6 +8,7 @@ from state_agent.critic import ValueNetwork
 from state_agent.custom_runner import record_manystate
 from state_agent.expert_player import extract_features
 from state_agent.planner import network_features, Planner, network_features_v2
+from state_agent.player import ACTION_SPACE
 import os
 
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -49,9 +50,9 @@ if __name__ == "__main__":
     # TODO:check.  Below feature size as 21 after including puck velocity. Find 'puck_velocity' in state_agent/player.py: act()
     value_net1 = ValueNetwork(21, 32).to(device)
     value_net2 = ValueNetwork(21, 32).to(device)
-    many_action_nets = [Team() for i in range(10)]
+    """many_action_nets = [Team() for i in range(10)]
     data = record_manystate(many_action_nets)
-    good_initialization = many_action_nets[np.argmax([d[-1]['team1']['highest_distance'] for d in data])]
+    good_initialization = many_action_nets[np.argmax([d[-1]['team1']['highest_distance'] for d in data])]"""
 
 
     n_epochs = 1 #100
@@ -63,21 +64,21 @@ if __name__ == "__main__":
     ppo_eps = 0.2
 
 
-    expert1_net = copy.deepcopy(good_initialization.model0)
-    expert2_net = copy.deepcopy(good_initialization.model1)
+    """expert1_net = copy.deepcopy(good_initialization.model0)
+    expert2_net = copy.deepcopy(good_initialization.model1)"""
 
     # TODO:check.  Below feature size is made 21 after including puck velocity. Find 'puck_velocity' in state_agent/player.py: act()
     # TODO:check. Action space has 6 cardinality now, so output_size is made 6. Find ACTION_SPACE in state_agent/player.py
     player1_net = Planner(21, 32, 6).to(device)
     player2_net = Planner(21, 32, 6).to(device)
-    dic1 = torch.load('player1_action_model.pt')
+    """dic1 = torch.load('player1_action_model.pt')
     dic2 = torch.load('player2_action_model.pt')
     player1_net.load_state_dict(dic1)
     player2_net.load_state_dict(dic2)
 
 
     best_player1_net = copy.deepcopy(expert1_net)
-    best_player2_net = copy.deepcopy(expert2_net)
+    best_player2_net = copy.deepcopy(expert2_net)"""
 
     player1_model_filepath = "player1_action_model.pt"
     player2_model_filepath = "player2_action_model.pt"
@@ -94,7 +95,7 @@ if __name__ == "__main__":
     best_team_reward = -np.inf
 
     for epoch in range(n_epochs): #main PPO loop
-            trajectories = record_manystate([Team(best_player1_net,best_player2_net)] * n_trajectories)
+            trajectories = record_manystate([Team(player1_net,player2_net)] * n_trajectories)
 
             rewards = [step_data['reward_state'] for step_tuple in trajectories for step_data in step_tuple[0]]
 
@@ -113,8 +114,8 @@ if __name__ == "__main__":
             features2 = []
             returns1 = []
             returns2 = []
-            actions1 = []
-            actions2 = []
+            action_ids1 = []
+            action_ids2 = []
             log_probs_old1 = []
             log_probs_old2 = []
             for trajectory in trajectories: #for every episode trajectory in the batch
@@ -131,65 +132,18 @@ if __name__ == "__main__":
 
                     # TODO (check). appended below puck velocity into state features
                     state_features1 = torch.cat([state_features1, trajectory[i]['puck_velocity']])
-                    state_features2 = torch.cat([state_features1, trajectory[i]['puck_velocity']])
+                    state_features2 = torch.cat([state_features2, trajectory[i]['puck_velocity']])
 
                     features1.append(torch.as_tensor(state_features1, dtype=torch.float32).cuda().view(-1))
                     features2.append(torch.as_tensor(state_features2, dtype=torch.float32).cuda().view(-1))
 
-                    #action a_i
-                    actions1.append({
-                        'steer': trajectory[i]['actions'][0]['steer'],
-                        'acceleration': trajectory[i]['actions'][0]['acceleration'],
-                        'brake': trajectory[i]['actions'][0]['brake']
-                    })
-                    actions2.append({
-                        'steer': trajectory[i]['actions'][2]['steer'],
-                        'acceleration': trajectory[i]['actions'][2]['acceleration'],
-                        'brake': trajectory[i]['actions'][2]['brake']
-                    })
+                    #action a_i (store just ids, not actual actions)
+                    action_ids1.append(trajectory[i]['action_ids'][0])
+                    action_ids2.append(trajectory[i]['action_ids'][1])
 
                     #probs p_i
-                    log_probs_old1.append(trajectory[i][logprobs[0]].unsqueeze(0))
-                    log_probs_old1.append(trajectory[i][logprobs[1]].unsqueeze(0))
-
-                    #TODO: check. Below commented section of code probably not needed anymore
-                    """with torch.no_grad():
-                        state_features_tensor1 = torch.as_tensor(state_features1, dtype=torch.float32).cuda().view(1, -1)
-                        state_features_tensor2 = torch.as_tensor(state_features2, dtype=torch.float32).cuda().view(1, -1)
-                        #output_old1 = player1_net(state_features_tensor1)
-                        #output_old2 = player2_net(state_features_tensor2)
-
-                        action_distribution_old1 = {
-                            'steer': torch.distributions.normal.Normal(output_old1[:, 2], 1),
-                            'acceleration': torch.distributions.normal.Normal(output_old1[:, 1], 1),
-                            'brake': torch.distributions.normal.Normal(output_old1[:, 0], 1),
-                        }
-                        action_distribution_old2 = {
-                            'steer': torch.distributions.normal.Normal(output_old2[:, 2], 1),
-                            'acceleration': torch.distributions.normal.Normal(output_old2[:, 1], 1),
-                            'brake': torch.distributions.normal.Normal(output_old2[:, 0], 1),
-                        }
-
-                        log_prob_old1 = torch.stack([
-                            action_distribution_old1['steer'].log_prob(
-                                torch.tensor(trajectory[i]['actions'][0]['steer'], dtype=torch.float32).cuda()),
-                            action_distribution_old1['acceleration'].log_prob(
-                                torch.tensor(trajectory[i]['actions'][0]['acceleration'], dtype=torch.float32).cuda()),
-                            action_distribution_old1['brake'].log_prob(
-                                torch.tensor(trajectory[i]['actions'][0]['brake'], dtype=torch.float32).cuda())
-                        ]).sum()
-
-                    log_prob_old2 = torch.stack([
-                        action_distribution_old2['steer'].log_prob(
-                            torch.tensor(trajectory[i]['actions'][2]['steer'], dtype=torch.float32).cuda()),
-                        action_distribution_old2['acceleration'].log_prob(
-                            torch.tensor(trajectory[i]['actions'][2]['acceleration'], dtype=torch.float32).cuda()),
-                        action_distribution_old2['brake'].log_prob(
-                            torch.tensor(trajectory[i]['actions'][2]['brake'], dtype=torch.float32).cuda())
-                    ]).sum()
-
-                    log_probs_old1.append(log_prob_old1.unsqueeze(0))
-                    log_probs_old2.append(log_prob_old2.unsqueeze(0))"""
+                    log_probs_old1.append(torch.tensor(trajectory[i]['logprobs'][0]).unsqueeze(0))
+                    log_probs_old2.append(torch.tensor(trajectory[i]['logprobs'][1]).unsqueeze(0))
 
             log_probs_old1 = torch.cat(log_probs_old1).view(-1).cuda()
             log_probs_old2 = torch.cat(log_probs_old2).view(-1).cuda()
@@ -199,16 +153,8 @@ if __name__ == "__main__":
             returns1 = ((returns1 - returns1.mean()) / returns1.std()) + 1e-8
             returns2 = ((returns2 - returns2.mean()) / returns2.std()) + 1e-8
 
-            actions1 = {
-                'steer': torch.tensor([a['steer'] for a in actions1], dtype=torch.float32).cuda(),
-                'acceleration': torch.tensor([a['acceleration'] for a in actions1], dtype=torch.float32).cuda(),
-                'brake': torch.tensor([a['brake'] for a in actions1], dtype=torch.float32).cuda()
-            }
-            actions2 = {
-                'steer': torch.tensor([a['steer'] for a in actions2], dtype=torch.float32).cuda(),
-                'acceleration': torch.tensor([a['acceleration'] for a in actions2], dtype=torch.float32).cuda(),
-                'brake': torch.tensor([a['brake'] for a in actions2], dtype=torch.float32).cuda()
-            }
+            action_ids1 = torch.tensor(action_ids1, dtype=torch.float32).cuda()
+            action_ids2 = torch.tensor(action_ids2, dtype=torch.float32).cuda()
 
             features1 = torch.stack(features1).cuda()
             features2 = torch.stack(features2).cuda()
@@ -218,14 +164,13 @@ if __name__ == "__main__":
             value_net1.train()
             value_net2.train()
 
-            #PPO loss and 1 gradient descent step
-
+            #PPO loss and gradient updates loop (batched)
             for it in range(n_iterations):
 
                 i = 0
-                for player_net, features, actions, returns, log_probs_old, value_net, value_optim, action_optim in [
-                    (player1_net, features1, actions1, returns1, log_probs_old1, value_net1, value_optim1, action_optim1),
-                    (player2_net, features2, actions2, returns2, log_probs_old2, value_net2, value_optim2, action_optim2)
+                for player_net, features, action_ids, returns, log_probs_old, value_net, value_optim, action_optim in [
+                    (player1_net, features1, action_ids1, returns1, log_probs_old1, value_net1, value_optim1, action_optim1),
+                    (player2_net, features2, action_ids2, returns2, log_probs_old2, value_net2, value_optim2, action_optim2)
                 ]:
                     with torch.no_grad():
                         state_values = value_net(features1).squeeze()
@@ -235,9 +180,11 @@ if __name__ == "__main__":
                     advantages = compute_gae(returns, state_values_next, 0.99, 0.95)
                     advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
+                    #TODO: you are doing only for 1 mini-batch. Need to loop for all mini-batches.
+                    #TODO: check advantages and returns; they are returning nans.
                     batch_ids = torch.randint(0, len(returns), (batch_size,))
                     batch_features = features[batch_ids]
-                    batch_actions = {k: v[batch_ids] for k, v in actions.items()}
+                    batch_action_ids = action_ids[batch_ids]
                     batch_returns = returns[batch_ids]
                     batch_advantages = advantages[batch_ids]
                     batch_log_probs_old = log_probs_old[batch_ids]
@@ -249,27 +196,28 @@ if __name__ == "__main__":
                     value_optim.step()
 
 
-                    output = player_net(batch_features)
-                    action_distribution = {
-                        'steer': torch.distributions.normal.Normal(output[:, 2], 1),
-                        'acceleration': torch.distributions.normal.Normal(output[:, 1], 1),
-                        'brake': torch.distributions.normal.Normal(output[:, 0], 1),
-                    }
-                    log_probs = torch.stack([
-                        action_distribution['steer'].log_prob(batch_actions['steer']),
-                        action_distribution['acceleration'].log_prob(batch_actions['acceleration']),
-                        action_distribution['brake'].log_prob(batch_actions['brake'])
-                    ]).sum(dim=0)
+                    current_policy_dist = player_net(batch_features)
+                    action_indexes = current_policy_dist.sample()
+                    batch_log_probs_new = current_policy_dist.log_prob(action_indexes)
 
-                    ratio = (log_probs - batch_log_probs_old).exp()
+                    # Entropy term
+                    entropy = current_policy_dist.entropy().mean()
+
+                    ratio = (batch_log_probs_new - batch_log_probs_old).exp()
                     surr1 = ratio * batch_advantages
 
                     ## double check the forumule from LLIANS BLOG -   TODO
 
                     surr2 = torch.clamp(ratio, 1.0 - ppo_eps, 1.0 + ppo_eps) * batch_advantages
-                    action_loss = -torch.min(surr1, surr2).mean()
+                    actor_loss = -torch.min(surr1, surr2).mean()
+
+                    #TODO: 1. Combine into single loss and train value+policy together
+                    # ppo_loss = 0.5 * value_loss + actor_loss - 0.001 * entropy
+                    #TODO: 2. Learn one policy network for both karts
+
+                    print("PPO loss: ", actor_loss)
                     action_optim.zero_grad()
-                    action_loss.backward()
+                    actor_loss.backward()
                     action_optim.step()
 
 
@@ -282,6 +230,24 @@ if __name__ == "__main__":
                 save_model(value_net1, value1_model_filepath)
                 save_model(value_net2, value2_model_filepath)
 
+    #TODO:
+    #1. Review rewards: sparse reward system + (small -ve reward) for every time step
+    #2. Fix the batching in PPO
+    #3. Review log_probs_old
+    #4. NaN issues in rewards and advantages
+    #5. Add terminal state logic
+    #6. Train across multiple environments. (opponent team = AI / Jurgen / etc.). PPO opt should consider many trajectories
+    #7. Test for long epochs/iterations/whatever. May fail.
+    #8. Train value and policy together (entropy term already added)
+    #9. Try only 1 network for both players (karts)
+    #10. Change layers in model (can add BNs, etc.) (Can also try CNNs - last resort)
+    #11. Clean up the code. Should be submission ready. Things are messy now.
+    #12. Inference code should be particularly neat, separate and ready irrespective of training/experiments. Need to run grader and check for any crashes.
+    #13. Review features (velocities already added now)
+    #14. Try more complex action space for acceleration values. Don't change steer and brake.
+    #15. Initialization. Start from imitation/dagger learnt model and try.
+    #16. Normalizations wherever appropriate
+    #17. Review GAE
 
 
 
