@@ -12,7 +12,9 @@ from os import environ
 
 
 TRACK_NAME = 'icy_soccer_field'
-MAX_FRAMES = 10
+MAX_FRAMES = 1200
+MAX_FRAMES_TRAIN = 100 # tune this for PPO training purpose
+NUM_PLAYER = 2
 
 RunnerInfo = namedtuple('RunnerInfo', ['agent_type', 'error', 'total_act_time'])
 
@@ -370,12 +372,14 @@ def record_video(team):
 
 
 def record_manystate(many_agents,parallel=10):
-    from . import remote
-    import ray
+    #from . import remote
+    #import ray # not needed as we aren't using ray
     team2 = AIRunner()
     results = []
     remote_calls = []
     match = Match(use_graphics=False)
-    remote_calls.append(match.run(TeamRunner(many_agents[0]), team2, 2, 1200, 3))
+
+    for agent in many_agents:
+        remote_calls.append(match.run(TeamRunner(agent), team2, NUM_PLAYER, MAX_FRAMES_TRAIN, 3))
 
     return remote_calls
