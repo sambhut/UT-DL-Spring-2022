@@ -19,7 +19,7 @@ def extract_features(pstate, soccer_state, opponent_state, team_id):
     kart_center = torch.tensor(pstate['kart']['location'], dtype=torch.float32)[[0, 2]]
     kart_direction = (kart_front - kart_center) / torch.norm(kart_front - kart_center)
     kart_angle = torch.atan2(kart_direction[1], kart_direction[0])
-    kart_velocity = torch.tensor(player_pos['kart']['velocity'], dtype=torch.float32)[[0, 2]]
+    kart_velocity = torch.tensor(pstate['kart']['velocity'], dtype=torch.float32)[[0, 2]]
 
     # features of soccer
     puck_center = torch.tensor(soccer_state['ball']['location'], dtype=torch.float32)[[0, 2]]
@@ -139,23 +139,28 @@ class Team:
         puck_velocity = current_puck_center - self.old_puck_center
 
         actions = []
+        action_ids = []
         logprobs = []
         for player_id, pstate in enumerate(player_state):
             features = extract_features(pstate, soccer_state, opponent_state, 1)
-            features = torch.cat([features, puck_velocity]) #TODO:check. Incorporated this somehow both here and in custom runner!
+            features = torch.cat([features, puck_velocity]) #TODO: need to incorporate this somehow  both here and in custom runner!!
             input_tensor = features.cuda()
             if player_id % 2 == 0:
                 output_dist = self.model0(input_tensor)
             else:
                 output_dist = self.model1(input_tensor)
 
+            print(output_dist)
+
             # Sample the action from output probabilities
             #dist = Categorical(output_probs)
-            action_index = output_dist.sample()          #tensor with 1 value representing index in action space
-            action_tuple = ACTION_SPACE[action_index]    #tuple of 3 values
+            action_id = output_dist.sample()          #tensor with 1 value representing index in action space
+            action_tuple = ACTION_SPACE[action_id]    #tuple of 3 values
             actions.append(dict(acceleration=action_tuple[1], steer=action_tuple[2], brake=action_tuple[0]))
+            action_ids.append(action_id)
 
             # prob required for PPO (only for training) # !Caution: remove when you run actual grader
-            logprob = dist.log_prob(action_index).item()
-            logprobs.append(log_prob)
-        return actions, logprobs
+            logprob = output_dist.log_prob(action_id).item()
+            logprobs.append(logprob)
+
+        return actions, logprobs, action_ids
