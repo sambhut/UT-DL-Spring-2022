@@ -12,7 +12,7 @@ from os import environ
 
 
 TRACK_NAME = 'icy_soccer_field'
-MAX_FRAMES = 1000
+MAX_FRAMES = 10
 
 RunnerInfo = namedtuple('RunnerInfo', ['agent_type', 'error', 'total_act_time'])
 
@@ -83,12 +83,12 @@ class TeamRunner:
         from time import time
         t0 = time()
         try:
-            r = self._team.act(player_state, *args, **kwargs)
+            r, lp, ids = self._team.act(player_state, *args, **kwargs)
         except Exception as e:
             self._error = 'Failed to act: {}'.format(str(e))
         else:
             self._total_act_time += time()-t0
-            return r
+            return r, lp, ids
         return []
 
     def info(self):
@@ -214,7 +214,7 @@ class Match:
         reward_puck_kart_threshold = 5
         total_rewards = 0
 
-        old_puck_center = torch.Tensor(initial_ball_location[0], initial_ball_location[1])
+        old_puck_center = torch.Tensor([initial_ball_location[0], initial_ball_location[1]])
         for it in range(max_frames):
             logging.debug('iteration {} / {}'.format(it, MAX_FRAMES))
             state.update()
@@ -230,7 +230,8 @@ class Match:
 
             # Have each team produce actions (in parallel)
             if t1_can_act:
-                team1_actions_delayed, logprobs = self._r(team1.act)(team1_state, team2_state, soccer_state)
+                print("t1 can act")
+                team1_actions_delayed, logprobs, team1_action_ids = self._r(team1.act)(team1_state, team2_state, soccer_state)
 
             if t2_can_act:
                 team2_actions_delayed = self._r(team2.act)(team2_state, team1_state, soccer_state)
@@ -250,10 +251,13 @@ class Match:
 
             # Assemble the actions
             actions = []
+            action_ids = []
             for i in range(num_player):
                 a1 = team1_actions[i] if team1_actions is not None and i < len(team1_actions) else {}
+                a1_id = team1_action_ids[i] if team1_action_ids is not None and i < len(team1_action_ids) else {}
                 a2 = team2_actions[i] if team2_actions is not None and i < len(team2_actions) else {}
                 actions.append(a1)
+                action_ids.append(a1_id)
                 actions.append(a2)
 
             current_distance = soccer_state["ball"]["location"][0]
@@ -304,7 +308,7 @@ class Match:
             if record_fn:
                 self._r(record_fn)(team1_state, team2_state, soccer_state=soccer_state, actions=actions,
                                    team1_images=team1_images, team2_images=team2_images)
-            data_temp = dict(team1_state=team1_state, team2_state=team2_state, soccer_state=soccer_state, actions=actions,reward_state=reward_state, logprobs=logprobs, puck_velocity=puck_velocity)
+            data_temp = dict(team1_state=team1_state, team2_state=team2_state, soccer_state=soccer_state, action_ids=action_ids,reward_state=reward_state, logprobs=logprobs, puck_velocity=puck_velocity)
 
 
             print(f"Rewards towards puck : {reward_towards_puck}")
