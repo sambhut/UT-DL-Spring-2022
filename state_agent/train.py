@@ -167,16 +167,14 @@ if __name__ == "__main__":
             #PPO loss and gradient updates loop (batched)
             for it in range(n_iterations):
 
-                i = 0
                 for player_net, features, action_ids, returns, log_probs_old, value_net, value_optim, action_optim in [
                     (player1_net, features1, action_ids1, returns1, log_probs_old1, value_net1, value_optim1, action_optim1),
                     (player2_net, features2, action_ids2, returns2, log_probs_old2, value_net2, value_optim2, action_optim2)
                 ]:
                     with torch.no_grad():
-                        state_values = value_net(features1).squeeze()
-                        state_values_next = torch.cat((state_values[i:], torch.tensor([0], device=device)))
+                        state_values = value_net(features).squeeze()
+                        state_values_next = torch.cat((state_values[1:], torch.tensor([0], device=device)))
 
-                    i = i+1
                     advantages = compute_gae(returns, state_values_next, 0.99, 0.95)
                     advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
