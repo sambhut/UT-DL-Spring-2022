@@ -2,6 +2,9 @@
 import torch
 import numpy as np
 from os import path
+
+ACTION_SPACE = [(1,0,-1), (1,0,0), (1,0,1), (0,1,-1), (0,1,0), (0,1,1)] # all possible (brake, acc, steer) tuples, i.e. our action space
+
 def limit_period(angle):
     # turn angle into -1 to 1
     return angle - torch.floor(angle / 2 + 0.5) * 2
@@ -41,6 +44,8 @@ class Team:
         self.team = None
         self.num_players = None
         self.old_puck_center = None
+        self.kart1_center = None
+        self.kart2_center = None
         self.model = torch.jit.load(path.join(path.dirname(path.abspath(__file__)), 'my_traced_model.pt'))
         self.model.eval()
 
@@ -59,6 +64,8 @@ class Team:
         """
         self.team, self.num_players = team, num_players
         self.old_puck_center = torch.Tensor([0, 0])
+        self.kart1_center = torch.Tensor([0, 0])
+        self.kart2_center = torch.Tensor([0, 0])
         #return ['sara_the_racer'] * num_players
         return ['tux'] * num_players
 
@@ -99,14 +106,19 @@ class Team:
         #print("opponent_state in state_agent is ", opponent_state)
         #print("soccer_state in state_agent is ", soccer_state)
 
-        # compute puck velocity
+        # compute puck and kart velocity
         current_puck_center = torch.tensor(soccer_state['ball']['location'], dtype=torch.float32)[[0, 2]]
+        current_kart_center1 = torch.tensor(player_state[0]["kart"]["location"], dtype=torch.float32)[[0, 2]]
+        current_kart_center2 = torch.tensor(player_state[1]["kart"]["location"], dtype=torch.float32)[[0, 2]]
         puck_velocity = current_puck_center - self.old_puck_center
+        kart1_velocity = current_kart_center1 - self.kart1_center
+        kart2_velocity = current_kart_center2 - self.kart2_center
 
         actions = []
         for player_id, pstate in enumerate(player_state):
             features = network_features(pstate, opponent_state, soccer_state)
-            features = torch.cat([features, puck_velocity])
+            features = torch.cat([features, puck_velocity, kart1_velocity if player_id == 0 else kart2_velocity])
+
             acceleration, steer, brake = self.model(features)
 
             brake_threshold = 0.7
@@ -116,7 +128,13 @@ class Team:
             else:
                 brake = False
 
+
+            action_id = self.model(features)
+            #action_tuple = ACTION_SPACE[action_id]
             actions.append(dict(acceleration=acceleration, steer=steer, brake=brake, nitro=True))  # drift=True))
+            #actions.append(dict(acceleration=action_tuple[1], steer=action_tuple[2], brake=action_tuple[0]))
             # update puck center
             self.old_puck_center = current_puck_center
+            self.kart1_center = current_kart_center1
+            self.kart2_center = current_kart_center2
         return actions
