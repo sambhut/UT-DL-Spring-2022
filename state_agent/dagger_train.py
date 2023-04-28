@@ -19,7 +19,7 @@ def train():
     n_trajectories = 10
     batch_size = 128
     learning_rate1 = 0.001
-    learning_rate2 = 0.000001
+    learning_rate2 = 0.001
     #weight_decay = 1e-5
     weight_decay1 = 0
     weight_decay2 = 0
@@ -28,7 +28,7 @@ def train():
     #expert_agent = Jurgen()
 
     # Create the network
-    action_net = Planner(13, 128, 3).to(device)
+    action_net = Planner(15, 128, 3).to(device)
 
     # Create the optimizer
     optimizer1 = torch.optim.Adam(action_net.parameters(), lr=learning_rate1, weight_decay=weight_decay1)
@@ -53,15 +53,15 @@ def train():
     features_new = torch.cat([imitation_features, train_data_imitation[0]['ball_velocity']])
     print("new imitation features shape is ", features_new.shape)
 
-    train_features_imitation0 = torch.stack([torch.cat([network_features(d['player_state'][0], d['opponent_state'][0], d['soccer_state']), d['ball_velocity']]) for d
-                                   in train_data_imitation]).to(device).float()
+    train_features_imitation0 = torch.stack([torch.cat([network_features(d['player_state'][0], d['opponent_state'][0], d['soccer_state']),
+                                d['ball_velocity'], d['kart_velocity'][0]]) for d in train_data_imitation]).to(device).float()
     print("train features imitation (kart 0) shape: ", train_features_imitation0.shape)
 
     train_labels_imitation0 = torch.stack([torch.as_tensor((d['action0']['acceleration'], d['action0']['steer'], d['action0']['brake'])) for d in train_data_imitation]).to(device).float()
     print("train labels imitation (kart 0) shape ", train_labels_imitation0.shape)
 
-    train_features_imitation1 = torch.stack([torch.cat([network_features(d['player_state'][1], d['opponent_state'][1], d['soccer_state']), d['ball_velocity']]) for d
-                                   in train_data_imitation]).to(device).float()
+    train_features_imitation1 = torch.stack([torch.cat([network_features(d['player_state'][1], d['opponent_state'][1], d['soccer_state']),
+                                d['ball_velocity'], d['kart_velocity'][1]]) for d in train_data_imitation]).to(device).float()
     print("train features imitation (kart 1) shape: ", train_features_imitation1.shape)
 
     train_labels_imitation1 = torch.stack([torch.as_tensor((d['action1']['acceleration'], d['action1']['steer'], d['action1']['brake'])) for d in train_data_imitation]).to(device).float()
@@ -83,13 +83,16 @@ def train():
             batch_features = train_features_imitation[batch_ids]
             batch_labels = train_labels_imitation[batch_ids]
 
+            #print("size of batch features is ", batch_features.size())
+
             o_acc, o_steer, o_brake = action_net(batch_features)
             acc_loss_val = mseLoss(o_acc[:, 0], batch_labels[:, 0])
             steer_loss_val = mseLoss(o_steer[:, 0], batch_labels[:, 1])
             brake_loss_val = bceLoss(o_brake[:, 0], batch_labels[:, -1])
             loss_val = 0.9*acc_loss_val + steer_loss_val + 0.1*brake_loss_val
 
-            print("imitation loss in iteration %d, epoch %d is %f" % (iteration/batch_size, epoch, loss_val))
+            print("imitation training loss in iteration %d, epoch %d is %f, acc loss- %f, steer loss- %f, brake loss- %f"
+                  % (iteration/batch_size, epoch, loss_val, acc_loss_val, steer_loss_val, brake_loss_val))
 
             global_step += 1
 
@@ -109,14 +112,14 @@ def train():
     for data in rollout_many([Actor()] * n_trajectories):
         train_data_dagger.extend(data)
 
-    train_features_dagger0 = torch.stack([torch.cat([network_features(d['player_state'][0], d['opponent_state'][0], d['soccer_state']), d['ball_velocity']]) for d
-                                   in train_data_dagger]).to(device).float()
+    train_features_dagger0 = torch.stack([torch.cat([network_features(d['player_state'][0], d['opponent_state'][0], d['soccer_state']),
+                                                     d['ball_velocity'], d['kart_velocity'][0]]) for d in train_data_dagger]).to(device).float()
     print("train features dagger (kart 0) shape: ", train_features_dagger0.shape)
 
     print_val = train_data_dagger[0]['action0']
 
-    train_features_dagger1 = torch.stack([torch.cat([network_features(d['player_state'][1], d['opponent_state'][1], d['soccer_state']), d['ball_velocity']]) for d
-                                   in train_data_dagger]).to(device).float()
+    train_features_dagger1 = torch.stack([torch.cat([network_features(d['player_state'][1], d['opponent_state'][1], d['soccer_state']),
+                                                     d['ball_velocity'], d['kart_velocity'][1]]) for d in train_data_dagger]).to(device).float()
     print("train features dagger (kart 1) shape: ", train_features_dagger1.shape)
 
     train_features_dagger = torch.cat([train_features_dagger0, train_features_dagger1], dim=0)
@@ -156,6 +159,10 @@ def train():
             batch_features = total_train_features[batch_ids]
             batch_labels = total_train_labels[batch_ids]
 
+            if iteration/batch_size == 200 or iteration/batch_size == 2:
+                print(batch_features)
+                print(batch_labels)
+
             o_acc, o_steer, o_brake = action_net(batch_features)
             acc_loss_val = mseLoss(o_acc[:, 0], batch_labels[:, 0])
             steer_loss_val = mseLoss(o_steer[:, 0], batch_labels[:, 1])
@@ -164,7 +171,8 @@ def train():
             # Assign different weights for each loss
             loss_val = 0.9*acc_loss_val + steer_loss_val + 0.1*brake_loss_val
 
-            print("dagger training loss in iteration %d, epoch %d is %f" % (iteration/batch_size, epoch, loss_val))
+            print("dagger training loss in iteration %d, epoch %d is %f, acc loss- %f, steer loss- %f, brake loss- %f"
+                  % (iteration/batch_size, epoch, loss_val, acc_loss_val, steer_loss_val, brake_loss_val))
 
             global_step += 1
 

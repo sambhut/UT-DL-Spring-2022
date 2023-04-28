@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
+from torch.distributions import Categorical
 
 class Planner(torch.nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
@@ -53,6 +54,19 @@ class Planner(torch.nn.Module):
             nn.Sigmoid() # brake is either 0 or 1
         )
 
+        self.newnetwork = torch.nn.Sequential(
+            torch.nn.Linear(input_size, hidden_size),
+            torch.nn.BatchNorm1d(hidden_size),
+            torch.nn.ReLU(),
+            torch.nn.Linear(hidden_size, 64),
+            torch.nn.BatchNorm1d(64),
+            torch.nn.Linear(64, 32),
+            torch.nn.BatchNorm1d(32),
+            torch.nn.Linear(32, output_size, bias=False)
+        )
+
+        self.softmax = torch.nn.Softmax()
+
 
     def forward(self, x):
         #x = self.network(x)
@@ -69,7 +83,8 @@ class Planner(torch.nn.Module):
         out = self.fc3(out)
         out = self.BN3(out)
         out = self.relu(out)
-        out = self.fc4(out)"""
+        out = self.fc4(out)
+        """
         accOut = steerOut = brakeOut = out
         accOut = self.accNetwork(accOut)
         steerOut = self.steerNetwork(steerOut)
@@ -83,7 +98,17 @@ class Planner(torch.nn.Module):
             brakeOut = brakeOut.squeeze(0)
 
         return accOut, steerOut, brakeOut
+        """
+        out = self.newnetwork(out)
+        out = self.softmax(out)
 
+        if out.dim() != x.dim():
+            out = out.squeeze(0)
+
+        #dist = Categorical(out)
+        #return dist
+        return out
+        """
 
 def limit_period(angle):
     # turn angle into -1 to 1
