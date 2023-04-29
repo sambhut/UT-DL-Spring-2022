@@ -53,8 +53,10 @@ class Planner(torch.nn.Module):
             torch.nn.ReLU(),
             torch.nn.Linear(hidden_size, 64),
             torch.nn.BatchNorm1d(64),
+            torch.nn.ReLU(),
             torch.nn.Linear(64, 32),
             torch.nn.BatchNorm1d(32),
+            torch.nn.ReLU(),
             torch.nn.Linear(32, output_size, bias=False)
         )
 
@@ -99,7 +101,8 @@ class Planner(torch.nn.Module):
         if out.dim() != x.dim():
             out = out.squeeze(0)
 
-        out = self.softmax(out)
+        #print("out in network is ", out)
+        #out = self.softmax(out)
         #return out
 
         #print("out.size is ", out.size())
@@ -107,6 +110,22 @@ class Planner(torch.nn.Module):
 
         #dist = Categorical(logits=out)
         return out
+
+def save_model(model, filename):
+    from torch import save
+    from os import path
+    if isinstance(model, Planner):
+        return save(model.state_dict(), path.join(path.dirname(path.abspath(__file__)), filename))
+    raise ValueError("model type '%s' not supported!" % str(type(model)))
+
+
+def load_model(model,location):
+    from torch import load
+    from os import path
+    r = model
+    r.load_state_dict(load(path.join(path.dirname(path.abspath(__file__)), location), map_location='cpu'))
+    return r
+
 
 def limit_period(angle):
     # turn angle into -1 to 1
