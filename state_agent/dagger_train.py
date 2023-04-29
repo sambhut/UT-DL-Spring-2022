@@ -1,6 +1,8 @@
 import torch
 from jurgen_agent.player import Team as Jurgen
 from geoffrey_agent.player import Team as Geoffrey
+from yann_agent.player import Team as Yann
+from yoshua_agent.player import Team as Yoshua
 from state_agent.player import network_features, action_to_actionspace, Team as Actor
 from state_agent.Rollout_new import rollout_many
 from state_agent.planner import Planner
@@ -12,12 +14,30 @@ from torch.distributions import Categorical
 
 print_val = 0
 
+
+def save_model(model, filename):
+    from torch import save
+    from os import path
+    if isinstance(model, Planner):
+        return save(model.state_dict(), path.join(path.dirname(path.abspath(__file__)), filename))
+    raise ValueError("model type '%s' not supported!" % str(type(model)))
+
+
+def load_model(model,location):
+    from torch import load
+    from os import path
+    r = model
+    r.load_state_dict(load(path.join(path.dirname(path.abspath(__file__)), location), map_location='cpu'))
+    return r
+
+
+
 def train():
     global print_val
 
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     n_epochs = 20
-    n_trajectories = 10
+    n_trajectories = 20
     batch_size = 128
     learning_rate1 = 0.001
     learning_rate2 = 0.0001
@@ -25,11 +45,20 @@ def train():
     weight_decay1 = 0
     weight_decay2 = 0
 
-    expert_agent = Jurgen()
+    expert_agent = Yann()
     #expert_agent = Jurgen()
+    #expert_agent = Geoffrey()
+    finetune = True
 
     # Create the network
     action_net = Planner(15, 128, 6).to(device)
+
+    #action_net2 = Planner(15, 128, 6).to(device)
+
+    model_filepath = "state_agent_withjurgen.pt"
+    # Create the network
+    action_net = load_model(action_net,model_filepath)
+
 
     # Create the optimizer
     optimizer1 = torch.optim.Adam(action_net.parameters(), lr=learning_rate1, weight_decay=weight_decay1)
@@ -37,6 +66,8 @@ def train():
 
     optimizer2 = torch.optim.Adam(action_net.parameters(), lr=learning_rate2, weight_decay=weight_decay2)
     #optimizer2 = torch.optim.SGD(action_net.parameters(), lr=learning_rate2, momentum=0.9, weight_decay=weight_decay2)
+
+
 
     # Create the losses
     mseLoss = torch.nn.MSELoss()
@@ -80,49 +111,48 @@ def train():
     global_step = 0
     action_net.train().to(device)
 
-    for epoch in range(n_epochs):
-        for iteration in range(0, len(train_data_imitation), batch_size):
-            batch_ids = torch.randint(0, len(train_data_imitation), (batch_size,), device=device)
-            batch_features = train_features_imitation[batch_ids]
-            batch_labels = train_labels_imitation[batch_ids]
+    if finetune == False:
+        for epoch in range(n_epochs):
+            for iteration in range(0, len(train_data_imitation), batch_size):
+                batch_ids = torch.randint(0, len(train_data_imitation), (batch_size,), device=device)
+                batch_features = train_features_imitation[batch_ids]
+                batch_labels = train_labels_imitation[batch_ids]
 
-            #print("size of batch features is ", batch_features.size())
+                #print("size of batch features is ", batch_features.size())
 
-            #o_acc, o_steer, o_brake = action_net(batch_features)
-            #acc_loss_val = mseLoss(o_acc[:, 0], batch_labels[:, 0])
-            #steer_loss_val = mseLoss(o_steer[:, 0], batch_labels[:, 1])
-            #brake_loss_val = bceLoss(o_brake[:, 0], batch_labels[:, -1])
-            #loss_val = 0.9*acc_loss_val + steer_loss_val + 0.1*brake_loss_val
+                #o_acc, o_steer, o_brake = action_net(batch_features)
+                #acc_loss_val = mseLoss(o_acc[:, 0], batch_labels[:, 0])
+                #steer_loss_val = mseLoss(o_steer[:, 0], batch_labels[:, 1])
+                #brake_loss_val = bceLoss(o_brake[:, 0], batch_labels[:, -1])
+                #loss_val = 0.9*acc_loss_val + steer_loss_val + 0.1*brake_loss_val
 
-            o = action_net.forward(batch_features)
+                o = action_net.forward(batch_features)
 
-            o = Categorical(o)
+                o = Categorical(o)
 
-            if iteration/batch_size == 0:
-                print(o)
-                print(o.probs)
-                print("o.size is ", o.probs.size())
-                print("batch_labels.size is ", batch_labels.size())
-                print(batch_labels)
+                if iteration/batch_size == 0:
+                    print(o)
+                    print(o.probs)
+                    print("o.size is ", o.probs.size())
+                    print("batch_labels.size is ", batch_labels.size())
+                    print(batch_labels)
 
-            loss_val = celoss(o.probs, batch_labels)
+                loss_val = celoss(o.probs, batch_labels)
 
-            #print("imitation training loss in iteration %d, epoch %d is %f, acc loss- %f, steer loss- %f, brake loss- %f"
-            #      % (iteration/batch_size, epoch, loss_val, acc_loss_val, steer_loss_val, brake_loss_val))
+                #print("imitation training loss in iteration %d, epoch %d is %f, acc loss- %f, steer loss- %f, brake loss- %f"
+                #      % (iteration/batch_size, epoch, loss_val, acc_loss_val, steer_loss_val, brake_loss_val))
 
-            print("imitation training loss in iteration %d, epoch %d is %f" %(iteration/batch_size, epoch, loss_val))
+                print("imitation training loss in iteration %d, epoch %d is %f" %(iteration/batch_size, epoch, loss_val))
 
-            global_step += 1
+                global_step += 1
 
-            optimizer1.zero_grad()
-            loss_val.backward()
-            optimizer1.step()
+                optimizer1.zero_grad()
+                loss_val.backward()
+                optimizer1.step()
 
-    action_net.to("cpu")
 
-    # Save the model as act expects the pt file
-    model = torch.jit.script(action_net)
-    torch.jit.save(model, 'state_agent.pt')
+
+
 
 
 # Collect the data for dagger
@@ -218,9 +248,7 @@ def train():
 
     action_net.to("cpu")
 
-    # Save the final model
-    model = torch.jit.script(action_net)
-    torch.jit.save(model, 'state_agent.pt')
+    save_model(action_net, model_filepath)
 
 if __name__ == "__main__":
 
