@@ -1,9 +1,9 @@
 import logging
+import math
+
 import numpy as np
 from collections import namedtuple
 import torch
-
-from geoffrey_agent import Team
 import pickle
 from argparse import ArgumentParser
 from pathlib import Path
@@ -13,7 +13,7 @@ from os import environ
 
 TRACK_NAME = 'icy_soccer_field'
 MAX_FRAMES = 1200
-MAX_FRAMES_TRAIN = 100 # tune this for PPO training purpose
+MAX_FRAMES_TRAIN = 1200 # tune this for PPO training purpose
 NUM_PLAYER = 2
 
 RunnerInfo = namedtuple('RunnerInfo', ['agent_type', 'error', 'total_act_time'])
@@ -175,14 +175,8 @@ class Match:
         t1_cars = self._g(self._r(team1.new_match)(0, num_player)) or ['tux']
         t2_cars = self._g(self._r(team2.new_match)(1, num_player)) or ['tux']
 
-        t1_type, *_ = self._g(self._r(team1.info)())
-        t2_type, *_ = self._g(self._r(team2.info)())
 
-        if t1_type == 'image' or t2_type == 'image':
-            assert self._use_graphics, 'Need to use_graphics for image agents.'
 
-        # Deal with crashes
-        t1_can_act, t2_can_act = self._check(team1, team2, 'new_match', 0, timeout)
 
         # Setup the race config
         logging.info('Setting up race')
@@ -230,6 +224,8 @@ class Match:
                 team1_images = [np.array(race.render_data[i].image) for i in range(0, len(race.render_data), 2)]
                 team2_images = [np.array(race.render_data[i].image) for i in range(1, len(race.render_data), 2)]
 
+            t1_can_act = True
+            t2_can_act = True
             # Have each team produce actions (in parallel)
             if t1_can_act:
                 print("t1 can act")
@@ -242,13 +238,8 @@ class Match:
             team1_actions = self._g(team1_actions_delayed) if t1_can_act else None
             team2_actions = self._g(team2_actions_delayed) if t2_can_act else None
 
-            new_t1_can_act, new_t2_can_act = self._check(team1, team2, 'act', it, timeout)
-            if not new_t1_can_act and t1_can_act and verbose:
-                print('Team 1 timed out')
-            if not new_t2_can_act and t2_can_act and verbose:
-                print('Team 2 timed out')
 
-            t1_can_act, t2_can_act = new_t1_can_act, new_t2_can_act
+            t1_can_act, t2_can_act = True, True
 
 
             # Assemble the actions
@@ -290,18 +281,45 @@ class Match:
                 distance = self.euclidean_distance(
                     torch.tensor(player_info['kart']['location'], dtype=torch.float32)[[0, 2]], soccer_ball_loc)
                 reward = 1 if distance < reward_puck_kart_threshold else 0
+                #reward = -1 if distance > 1 and reward == 1 else 0
                 total_rewards += reward
 
             average_reward = total_rewards / 2
             reward_towards_puck = average_reward
 
 
+            # rewards towards puck - distance
+            distance = 0
+            for player_info in team1_state:
+                distance = self.euclidean_distance(
+                    torch.tensor(player_info['kart']['location'], dtype=torch.float32)[[0, 2]], soccer_ball_loc)
+                reward = 1 if distance < reward_puck_kart_threshold else 0
+                #reward = -1 if distance > 1 and reward == 1 else 0
+                total_rewards += reward
+
+            average_reward = total_rewards / 2
+            reward_towards_puck = average_reward
+
+
+            # rewards towards puck - goal direction
+            for player_info in team1_state:
+                puck_agent_vector = np.array(soccer_ball_loc) - np.array(player_info.location)
+                goal_agent_vector = np.array(goal_line_center) - np.array(player_info.location)
+
+                cos_angle = np.dot(puck_agent_vector, goal_agent_vector) / (
+                        np.linalg.norm(puck_agent_vector) * np.linalg.norm(goal_agent_vector))
+
+            cos_threshold = math.cos(math.radians(15))
+            reward_puck_direction = 1 if cos_angle >= cos_threshold else 0
+
             reward_weight_puck_goal = 2
-            reward_weight_towards_puck = 1.5
+            reward_weight_towards_puck = 4.5
             reward_weight_puck_direction = 2.5
 
             reward_state = (
-                    (reward_weight_towards_puck * (1/(distance + 0.01)) * reward_towards_puck)
+                    (reward_weight_towards_puck * puck_goal_distance_reward)
+                    (reward_weight_puck_goal * reward_towards_puck)
+                    (reward_weight_puck_direction * reward_puck_direction)
             )
 
             #velocities
@@ -380,6 +398,6 @@ def record_manystate(many_agents,parallel=10):
     match = Match(use_graphics=False)
 
     for agent in many_agents:
-        remote_calls.append(match.run(TeamRunner(agent), team2, NUM_PLAYER, MAX_FRAMES_TRAIN, 3))
+        remote_calls.append(match.run(agent, team2, 2, 1200, 3))
 
     return remote_calls
