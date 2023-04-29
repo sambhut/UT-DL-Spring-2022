@@ -122,14 +122,14 @@ class Rollout_new:
         self.team0 = team0
         self.team1 = team1_update
 
-    def __call__(self, initial_ball_location=[0, 0], initial_ball_velocity=[0, 0], max_frames=MAX_FRAMES, use_ray=False, record_fn=None, train=False, rand=False):
+    def __call__(self, initial_ball_location=[0.0, 1.0], initial_ball_velocity=[0, 0], max_frames=MAX_FRAMES, use_ray=False, record_fn=None, train=False, rand=False):
         global pystk_init_done
 
         data = []
         state = pystk.WorldState()
         state.update()
-        #state.set_ball_location((initial_ball_location[0], 1, initial_ball_location[1]),
-        #                        (initial_ball_velocity[0], 0, initial_ball_velocity[1]))
+        state.set_ball_location([initial_ball_location[0], 1, initial_ball_location[1]],
+                                [initial_ball_velocity[0], 0, initial_ball_velocity[1]])
 
         # Add some randomness to the starting location
         #if train is True or rand is True:
@@ -137,12 +137,12 @@ class Rollout_new:
             print("rand is ", rand)
             #rand1 = random.randrange(10)
             #rand2 = random.randrange(10)
-            rand1 = 0
+            rand1 = 3
             rand2 = 4
             #rand3 = random.randrange(10)
             #rand4 = random.randrange(10)
             rand3 = 0
-            rand4 = 0
+            rand4 = 3
             #rand3 = 20
             #rand4 = -20
             print("rand1 is ", rand1)
@@ -219,11 +219,13 @@ class Rollout_new:
 
         #self.race.start()
 
+
         old_puck_center = torch.Tensor([0, 0])
         old_kart_center1 = torch.Tensor([0, 0])
         old_kart_center2 = torch.Tensor([0, 0])
         old_soccer_state = {'ball': {'location': [0.0, 0.0, 0.0]}}
         for it in range(max_frames):
+            #print("soccer ball location before update is ", to_native(state.soccer)['ball']['location'])
             state.update()
 
             # Get the state
@@ -235,6 +237,7 @@ class Rollout_new:
             # print some data every 100 frames
             if (it%200) == 0 and train is False:
             #if train is False:
+            #if (it%1) == 0:
                 print("train is ", train)
                 print("iteration {%d} / {%d}" % (it, max_frames))
                 print("player kart0 location is ", team0_state[0]["kart"]["location"])

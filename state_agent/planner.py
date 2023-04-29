@@ -2,21 +2,13 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.distributions import Categorical
+import torch.jit as jit
+
 
 class Planner(torch.nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
         super(Planner, self).__init__()
 
-        """
-        self.fc1 = torch.nn.Linear(input_size, hidden_size)
-        self.BN1 = torch.nn.BatchNorm1d(hidden_size)
-        self.relu = torch.nn.ReLU()
-        self.fc2 = torch.nn.Linear(hidden_size, 64)
-        self.BN2 = torch.nn.BatchNorm1d(64)
-        self.fc3 = torch.nn.Linear(64, 32)
-        self.BN3 = torch.nn.BatchNorm1d(32)
-        self.fc4 = torch.nn.Linear(32, output_size, bias=False)
-        self.sigmoid 
         """
         self.accNetwork = torch.nn.Sequential(
             torch.nn.Linear(input_size, hidden_size),
@@ -53,6 +45,7 @@ class Planner(torch.nn.Module):
             torch.nn.Linear(32, 1, bias=False),
             nn.Sigmoid() # brake is either 0 or 1
         )
+        """
 
         self.newnetwork = torch.nn.Sequential(
             torch.nn.Linear(input_size, hidden_size),
@@ -65,8 +58,7 @@ class Planner(torch.nn.Module):
             torch.nn.Linear(32, output_size, bias=False)
         )
 
-        self.softmax = torch.nn.Softmax()
-
+        self.softmax = torch.nn.Softmax(dim=0)
 
     def forward(self, x):
         #x = self.network(x)
@@ -85,6 +77,7 @@ class Planner(torch.nn.Module):
         out = self.relu(out)
         out = self.fc4(out)
         """
+        """
         accOut = steerOut = brakeOut = out
         accOut = self.accNetwork(accOut)
         steerOut = self.steerNetwork(steerOut)
@@ -99,16 +92,21 @@ class Planner(torch.nn.Module):
 
         return accOut, steerOut, brakeOut
         """
+
         out = self.newnetwork(out)
-        out = self.softmax(out)
+        #out = self.softmax(out)
 
         if out.dim() != x.dim():
             out = out.squeeze(0)
 
-        #dist = Categorical(out)
-        #return dist
+        out = self.softmax(out)
+        #return out
+
+        #print("out.size is ", out.size())
+        #print(out)
+
+        #dist = Categorical(logits=out)
         return out
-        """
 
 def limit_period(angle):
     # turn angle into -1 to 1

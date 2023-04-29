@@ -1,13 +1,14 @@
 import torch
 from jurgen_agent.player import Team as Jurgen
 from geoffrey_agent.player import Team as Geoffrey
-from state_agent.player import network_features, Team as Actor
+from state_agent.player import network_features, action_to_actionspace, Team as Actor
 from state_agent.Rollout_new import rollout_many
 from state_agent.planner import Planner
 from state_agent.Rollout_new import Rollout_new
 from os import path
 from tournament.utils import VideoRecorder
 import time
+from torch.distributions import Categorical
 
 print_val = 0
 
@@ -19,7 +20,7 @@ def train():
     n_trajectories = 10
     batch_size = 128
     learning_rate1 = 0.001
-    learning_rate2 = 0.001
+    learning_rate2 = 0.0001
     #weight_decay = 1e-5
     weight_decay1 = 0
     weight_decay2 = 0
@@ -28,7 +29,7 @@ def train():
     #expert_agent = Jurgen()
 
     # Create the network
-    action_net = Planner(15, 128, 3).to(device)
+    action_net = Planner(15, 128, 6).to(device)
 
     # Create the optimizer
     optimizer1 = torch.optim.Adam(action_net.parameters(), lr=learning_rate1, weight_decay=weight_decay1)
@@ -40,6 +41,8 @@ def train():
     # Create the losses
     mseLoss = torch.nn.MSELoss()
     bceLoss = torch.nn.BCEWithLogitsLoss()
+
+    celoss = torch.nn.CrossEntropyLoss()
 
     # Collect the data for imitation learning
     train_data_imitation = []
@@ -57,14 +60,14 @@ def train():
                                 d['ball_velocity'], d['kart_velocity'][0]]) for d in train_data_imitation]).to(device).float()
     print("train features imitation (kart 0) shape: ", train_features_imitation0.shape)
 
-    train_labels_imitation0 = torch.stack([torch.as_tensor((d['action0']['acceleration'], d['action0']['steer'], d['action0']['brake'])) for d in train_data_imitation]).to(device).float()
+    train_labels_imitation0 = torch.stack([torch.as_tensor(action_to_actionspace(d['action0']['brake'], d['action0']['acceleration'], d['action0']['steer'])) for d in train_data_imitation]).to(device)
     print("train labels imitation (kart 0) shape ", train_labels_imitation0.shape)
 
     train_features_imitation1 = torch.stack([torch.cat([network_features(d['player_state'][1], d['opponent_state'][1], d['soccer_state']),
                                 d['ball_velocity'], d['kart_velocity'][1]]) for d in train_data_imitation]).to(device).float()
     print("train features imitation (kart 1) shape: ", train_features_imitation1.shape)
 
-    train_labels_imitation1 = torch.stack([torch.as_tensor((d['action1']['acceleration'], d['action1']['steer'], d['action1']['brake'])) for d in train_data_imitation]).to(device).float()
+    train_labels_imitation1 = torch.stack([torch.as_tensor(action_to_actionspace(d['action1']['brake'], d['action1']['acceleration'], d['action1']['steer'])) for d in train_data_imitation]).to(device)
     print("train labels imitation (kart 1) shape ", train_labels_imitation1.shape)
 
     train_features_imitation = torch.cat([train_features_imitation0, train_features_imitation1], dim=0)
@@ -85,14 +88,29 @@ def train():
 
             #print("size of batch features is ", batch_features.size())
 
-            o_acc, o_steer, o_brake = action_net(batch_features)
-            acc_loss_val = mseLoss(o_acc[:, 0], batch_labels[:, 0])
-            steer_loss_val = mseLoss(o_steer[:, 0], batch_labels[:, 1])
-            brake_loss_val = bceLoss(o_brake[:, 0], batch_labels[:, -1])
-            loss_val = 0.9*acc_loss_val + steer_loss_val + 0.1*brake_loss_val
+            #o_acc, o_steer, o_brake = action_net(batch_features)
+            #acc_loss_val = mseLoss(o_acc[:, 0], batch_labels[:, 0])
+            #steer_loss_val = mseLoss(o_steer[:, 0], batch_labels[:, 1])
+            #brake_loss_val = bceLoss(o_brake[:, 0], batch_labels[:, -1])
+            #loss_val = 0.9*acc_loss_val + steer_loss_val + 0.1*brake_loss_val
 
-            print("imitation training loss in iteration %d, epoch %d is %f, acc loss- %f, steer loss- %f, brake loss- %f"
-                  % (iteration/batch_size, epoch, loss_val, acc_loss_val, steer_loss_val, brake_loss_val))
+            o = action_net.forward(batch_features)
+
+            o = Categorical(o)
+
+            if iteration/batch_size == 0:
+                print(o)
+                print(o.probs)
+                print("o.size is ", o.probs.size())
+                print("batch_labels.size is ", batch_labels.size())
+                print(batch_labels)
+
+            loss_val = celoss(o.probs, batch_labels)
+
+            #print("imitation training loss in iteration %d, epoch %d is %f, acc loss- %f, steer loss- %f, brake loss- %f"
+            #      % (iteration/batch_size, epoch, loss_val, acc_loss_val, steer_loss_val, brake_loss_val))
+
+            print("imitation training loss in iteration %d, epoch %d is %f" %(iteration/batch_size, epoch, loss_val))
 
             global_step += 1
 
@@ -104,7 +122,7 @@ def train():
 
     # Save the model as act expects the pt file
     model = torch.jit.script(action_net)
-    torch.jit.save(model, 'my_traced_model.pt')
+    torch.jit.save(model, 'state_agent.pt')
 
 
 # Collect the data for dagger
@@ -133,10 +151,10 @@ def train():
 
     print(action_dict[0])
 
-    train_labels_dagger0 = torch.stack([torch.as_tensor((l[0]['acceleration'], l[0]['steer'], l[0]['brake'])) for l in action_dict]).to(device).float()
+    train_labels_dagger0 = torch.stack([torch.as_tensor(action_to_actionspace(l[0]['brake'], l[0]['acceleration'], l[0]['steer'])) for l in action_dict]).to(device)
     print("train labels dagger (kart 0) shape: ", train_labels_dagger0.shape)
 
-    train_labels_dagger1 = torch.stack([torch.as_tensor((l[1]['acceleration'], l[1]['steer'], l[1]['brake'])) for l in action_dict]).to(device).float()
+    train_labels_dagger1 = torch.stack([torch.as_tensor(action_to_actionspace(l[1]['brake'], l[1]['acceleration'], l[1]['steer'])) for l in action_dict]).to(device)
     print("train labels dagger (kart 1) shape: ", train_labels_dagger1.shape)
 
     train_labels_dagger = torch.cat([train_labels_dagger0, train_labels_dagger1], dim=0)
@@ -159,20 +177,38 @@ def train():
             batch_features = total_train_features[batch_ids]
             batch_labels = total_train_labels[batch_ids]
 
+            """
             if iteration/batch_size == 200 or iteration/batch_size == 2:
                 print(batch_features)
                 print(batch_labels)
+            """
 
+            """
             o_acc, o_steer, o_brake = action_net(batch_features)
             acc_loss_val = mseLoss(o_acc[:, 0], batch_labels[:, 0])
             steer_loss_val = mseLoss(o_steer[:, 0], batch_labels[:, 1])
             brake_loss_val = bceLoss(o_brake[:, 0], batch_labels[:, -1])
+            """
+
+            o = action_net(batch_features)
+
+            o = Categorical(o)
+
+            if iteration/batch_size == 1:
+                print("o.probs.size is ", o.probs.size())
+                print(o.probs)
+                print("batch_labels.size is ", batch_labels.size())
+                print(batch_labels)
+
+            loss_val = celoss(o.probs, batch_labels)
 
             # Assign different weights for each loss
-            loss_val = 0.9*acc_loss_val + steer_loss_val + 0.1*brake_loss_val
+            #loss_val = 0.9*acc_loss_val + steer_loss_val + 0.1*brake_loss_val
 
-            print("dagger training loss in iteration %d, epoch %d is %f, acc loss- %f, steer loss- %f, brake loss- %f"
-                  % (iteration/batch_size, epoch, loss_val, acc_loss_val, steer_loss_val, brake_loss_val))
+            #print("dagger training loss in iteration %d, epoch %d is %f, acc loss- %f, steer loss- %f, brake loss- %f"
+            #      % (iteration/batch_size, epoch, loss_val, acc_loss_val, steer_loss_val, brake_loss_val))
+
+            print("dagger training loss in iteration %d, epoch %d is %f" % (iteration / batch_size, epoch, loss_val))
 
             global_step += 1
 
@@ -184,7 +220,7 @@ def train():
 
     # Save the final model
     model = torch.jit.script(action_net)
-    torch.jit.save(model, 'my_traced_model.pt')
+    torch.jit.save(model, 'state_agent.pt')
 
 if __name__ == "__main__":
 

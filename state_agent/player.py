@@ -2,8 +2,31 @@
 import torch
 import numpy as np
 from os import path
+from torch.distributions import Categorical
 
 ACTION_SPACE = [(1,0,-1), (1,0,0), (1,0,1), (0,1,-1), (0,1,0), (0,1,1)] # all possible (brake, acc, steer) tuples, i.e. our action space
+
+def action_to_actionspace(brake, acceleration, steer):
+
+    if brake == 0:
+        b_tuple = 0
+        a_tuple = 1
+
+    else:
+        b_tuple = 1
+        a_tuple = 0
+
+    s_tuple = steer
+
+    tup = (b_tuple, a_tuple, s_tuple)
+
+    for i in range(0, len(ACTION_SPACE)):
+        if tup == ACTION_SPACE[i]:
+            #print("got values %f, %f, %f, returning index %d" % (brake, acceleration, steer, i))
+            return int(i)
+
+    print("did not get valid tuple %f, %f, %f" %(brake, acceleration, steer))
+    return -1
 
 def limit_period(angle):
     # turn angle into -1 to 1
@@ -46,7 +69,7 @@ class Team:
         self.old_puck_center = None
         self.kart1_center = None
         self.kart2_center = None
-        self.model = torch.jit.load(path.join(path.dirname(path.abspath(__file__)), 'my_traced_model.pt'))
+        self.model = torch.jit.load(path.join(path.dirname(path.abspath(__file__)), 'state_agent.pt'))
         self.model.eval()
 
     def new_match(self, team: int, num_players: int) -> list:
@@ -119,6 +142,7 @@ class Team:
             features = network_features(pstate, opponent_state, soccer_state)
             features = torch.cat([features, puck_velocity, kart1_velocity if player_id == 0 else kart2_velocity])
 
+            """
             acceleration, steer, brake = self.model(features)
 
             brake_threshold = 0.7
@@ -127,12 +151,23 @@ class Team:
                 acceleration = 0.0
             else:
                 brake = False
+            """
 
+            logits = self.model(features)
+            #print("logits returned are ", logits)
+            #softmax_output = torch.nn.functional.softmax(logits, dim=0)
+            #print("softmax_output returned is ", softmax_output)
+            #action_id = torch.argmax(softmax_output)
+            #print("predicted label is ", action_id)
 
-            action_id = self.model(features)
-            #action_tuple = ACTION_SPACE[action_id]
-            actions.append(dict(acceleration=acceleration, steer=steer, brake=brake, nitro=True))  # drift=True))
-            #actions.append(dict(acceleration=action_tuple[1], steer=action_tuple[2], brake=action_tuple[0]))
+            logits = Categorical(logits)
+
+            action_id = logits.sample()
+
+            action_tuple = ACTION_SPACE[action_id]
+            #action_tuple = ACTION_SPACE[-100]
+            #actions.append(dict(acceleration=acceleration, steer=steer, brake=brake, nitro=True))  # drift=True))
+            actions.append(dict(acceleration=action_tuple[1], steer=action_tuple[2], brake=action_tuple[0]))
             # update puck center
             self.old_puck_center = current_puck_center
             self.kart1_center = current_kart_center1
