@@ -31,7 +31,7 @@ def action_to_actionspace(brake, acceleration, steer):
 def limit_period(angle):
     # turn angle into -1 to 1
     return angle - torch.floor(angle / 2 + 0.5) * 2
-def network_features(player_pos, opponent_pos, ball_pos):
+def network_features(player_pos, opponent_pos, ball_pos, team_id):
 
     # features of ego-vehicle
     kart_front = torch.tensor(player_pos['kart']['front'], dtype=torch.float32)[[0, 2]]
@@ -47,6 +47,12 @@ def network_features(player_pos, opponent_pos, ball_pos):
     kart_to_puck_angle_difference = limit_period((kart_angle - kart_to_puck_angle)/np.pi)
 
     # features of score-line
+    """
+    print("print1 is ", ball_pos['goal_line'][0])
+    print("print2 is ", torch.tensor(ball_pos['goal_line'][0], dtype=torch.float32)[:, [0, 2]])
+    print("print3 is ", torch.tensor(ball_pos['goal_line'][0], dtype=torch.float32)[:, [0, 2]][0])
+    print("print3 is ", torch.tensor(ball_pos['goal_line'][0], dtype=torch.float32)[:, [0, 2]][1])
+
     goal_line_center = torch.tensor(ball_pos['goal_line'][0], dtype=torch.float32)[:, [0, 2]].mean(dim=0)
 
     puck_to_goal_line = (goal_line_center-puck_center) / torch.norm(goal_line_center-puck_center)
@@ -54,6 +60,41 @@ def network_features(player_pos, opponent_pos, ball_pos):
     features = torch.tensor([kart_center[0], kart_center[1], kart_angle, kart_to_puck_angle,
         goal_line_center[0], goal_line_center[1], kart_to_puck_angle_difference,
         puck_center[0], puck_center[1], puck_to_goal_line[0], puck_to_goal_line[1]], dtype=torch.float32)
+    """
+
+    goal0_posts = torch.tensor(ball_pos['goal_line'][(team_id + 1) % 2], dtype=torch.float32)[:, [0, 2]]
+    puck_to_goal0_post0 = (goal0_posts[0]-puck_center) / torch.norm(goal0_posts[0]-puck_center)
+    puck_to_goal0_post1 = (goal0_posts[1]-puck_center) / torch.norm(goal0_posts[1]-puck_center)
+
+    puck_to_goal0_post0_angle = torch.atan2(puck_to_goal0_post0[1], puck_to_goal0_post0[0])
+    puck_to_goal0_post1_angle = torch.atan2(puck_to_goal0_post1[1], puck_to_goal0_post1[0])
+
+    goal1_posts = torch.tensor(ball_pos['goal_line'][team_id], dtype=torch.float32)[:, [0, 2]]
+    puck_to_goal1_post0 = (goal1_posts[0]-puck_center) / torch.norm(goal1_posts[0]-puck_center)
+    puck_to_goal1_post1 = (goal1_posts[1]-puck_center) / torch.norm(goal1_posts[1]-puck_center)
+
+    puck_to_goal1_post0_angle = torch.atan2(puck_to_goal1_post0[1], puck_to_goal1_post0[0])
+    puck_to_goal1_post1_angle = torch.atan2(puck_to_goal1_post1[1], puck_to_goal1_post1[0])
+
+    #print("goal_posts is ", goal_posts)
+    #print("goal_posts[0] is ", goal_posts[0])
+    #print("goal_posts[1] is ", goal_posts[1])
+    #print("puck_to_goal_post0 is ", puck_to_goal_post0)
+    #print("puck_to_goal_post1 is ", puck_to_goal_post1)
+
+    """
+    features = torch.tensor([kart_center[0], kart_center[1], kart_angle, kart_to_puck_angle,
+        kart_to_puck_angle_difference, puck_center[0], puck_center[1], puck_to_goal0_post0[0],
+        puck_to_goal0_post0[1], puck_to_goal0_post1[0], puck_to_goal0_post1[1], puck_to_goal1_post0[0],
+        puck_to_goal1_post0[1], puck_to_goal1_post1[0], puck_to_goal1_post1[1]], dtype=torch.float32)
+    """
+
+    features = torch.tensor([kart_center[0], kart_center[1], kart_angle, kart_to_puck_angle,
+        kart_to_puck_angle_difference, puck_center[0], puck_center[1], puck_to_goal1_post0[0],
+        puck_to_goal1_post0[1], puck_to_goal1_post1[0], puck_to_goal1_post1[1], puck_to_goal1_post0_angle,
+        puck_to_goal1_post1_angle], dtype=torch.float32)
+
+    #print("size of features is ", features.size())
 
     return features
 class Team:
@@ -90,7 +131,8 @@ class Team:
         self.kart1_center = torch.Tensor([0, 0])
         self.kart2_center = torch.Tensor([0, 0])
         #return ['sara_the_racer'] * num_players
-        return ['tux'] * num_players
+        #return ['tux'] * num_players
+        return ['pidgin'] * num_players
 
     def act(self, player_state, opponent_state, soccer_state):
         """
@@ -139,7 +181,7 @@ class Team:
 
         actions = []
         for player_id, pstate in enumerate(player_state):
-            features = network_features(pstate, opponent_state, soccer_state)
+            features = network_features(pstate, opponent_state, soccer_state, self.team)
             features = torch.cat([features, puck_velocity, kart1_velocity if player_id == 0 else kart2_velocity])
 
             """
@@ -155,14 +197,21 @@ class Team:
 
             logits = self.model(features)
             #print("logits returned are ", logits)
-            #softmax_output = torch.nn.functional.softmax(logits, dim=0)
+            softmax_output = torch.nn.functional.softmax(logits, dim=0)
             #print("softmax_output returned is ", softmax_output)
-            #action_id = torch.argmax(softmax_output)
+            action_id = torch.argmax(softmax_output)
             #print("predicted label is ", action_id)
 
-            logits = Categorical(logits)
+            #print("output of model is ", logits)
 
-            action_id = logits.sample()
+            #logits = Categorical(logits)
+
+            #print(logits)
+            #print("outout.categorical.probs is ", logits.probs)
+
+            #action_id = logits.sample()
+
+            #print("action_id is ", action_id)
 
             action_tuple = ACTION_SPACE[action_id]
             #action_tuple = ACTION_SPACE[-100]

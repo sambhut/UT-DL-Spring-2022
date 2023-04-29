@@ -10,11 +10,13 @@ from yoshua_agent.player import Team as Yoshua
 from tournament.utils import VideoRecorder
 import random
 
-MAX_FRAMES = 1000
+MAX_FRAMES = 1200
 
 ray_init_done = 0
 
 pystk_init_done = False
+
+opponents_str = ["Geoffrey", "ImJurgen()", "Jurgen()", "Yann()", "Yoshua()", "AIRunner()"]
 
 class AIRunner:
     #agent_type = 'state'
@@ -70,7 +72,7 @@ class Rollout_new:
             return ray.get(f)
         return f
 
-    def __init__(self, team0, team1=AIRunner(), num_player=2, use_ray=False, train=False):
+    def __init__(self, team0, opponent_id=-1, team1=AIRunner(), num_player=2, use_ray=False, train=False):
 
         global pystk_init_done
         # fire up pystk
@@ -80,34 +82,65 @@ class Rollout_new:
             pystk_init_done = True
             pystk.init(graphics_config)
 
+        opponents = [Geoffrey(), ImJurgen(), Jurgen(), Yann(), Yoshua(), AIRunner()]
+
         self.num_player = num_player
 
+        opponent_no = opponent_id % len(opponents)
+
+        AIteam = -1
+
+        self.player_team = 0
+
         if train is True:
-            opponents = [Geoffrey(), ImJurgen(), Jurgen(), Yann(), Yoshua(), AIRunner()]
-            rand = random.randrange(len(opponents))
-            print("rand chosen in init is ", rand)
-            team1_update = opponents[rand]
+
+            if opponent_id < len(opponents):
+                team0_updated = team0
+                team1_updated = opponents[opponent_no]
+                AIteam = 1 if opponent_no == (len(opponents)-1) else -1
+                self.player_team = 0
+
+            else:
+                team0_updated = opponents[opponent_no]
+                team1_updated = team0
+                AIteam = 0 if opponent_no == (len(opponents)-1) else -1
+                self.player_team = 1
+
         else:
-            team1_update = team1
-            rand = 5
+            team0_updated = team0
+            team1_updated = team1
+            opponent_no = len(opponents) - 1
+            AIteam = 1
+            self.player_team = 0
+
+        print("opponent_no is ", opponent_no)
+        print("AIteam is ", AIteam)
+        print("team0 is ", team0_updated)
+        print("team1 is ", team1_updated)
+        print("player team is ", self.player_team)
 
         # set teams for a new match
         #team0_cars = self._g(self._r(team0.new_match)(0, num_player))
         #team1_cars = self._g(self._r(team1.new_match)(1, num_player))
-        team0_cars = team0.new_match(0, num_player) or ['tux']
-        team1_cars = team1_update.new_match(1, num_player) or ['tux']
+        team0_cars = team0_updated.new_match(0, num_player) or ['tux']
+        team1_cars = team1_updated.new_match(1, num_player) or ['tux']
 
         # set race config and players config
         RaceConfig = pystk.RaceConfig
         race_config = RaceConfig(track="icy_soccer_field", mode=RaceConfig.RaceMode.SOCCER, num_kart=2 * num_player)
 
         PlayerConfig = pystk.PlayerConfig
-        controller0 = PlayerConfig.Controller.PLAYER_CONTROL
 
-        if rand == 5:
-            controller1 = PlayerConfig.Controller.AI_CONTROL
-        else:
+        if AIteam == -1:
+            controller0 = PlayerConfig.Controller.PLAYER_CONTROL
             controller1 = PlayerConfig.Controller.PLAYER_CONTROL
+
+        elif AIteam == 0:
+            controller0 = PlayerConfig.Controller.AI_CONTROL
+            controller1 = PlayerConfig.Controller.PLAYER_CONTROL
+        else:
+            controller0 = PlayerConfig.Controller.PLAYER_CONTROL
+            controller1 = PlayerConfig.Controller.AI_CONTROL
 
         race_config.players.pop()
         for i in range(num_player):
@@ -120,9 +153,9 @@ class Rollout_new:
         #self.race.step()
 
         self.team0 = team0
-        self.team1 = team1_update
+        self.team1 = team1_updated
 
-    def __call__(self, initial_ball_location=[0.0, 1.0], initial_ball_velocity=[0, 0], max_frames=MAX_FRAMES, use_ray=False, record_fn=None, train=False, rand=False):
+    def __call__(self, initial_ball_location=[0, 0], initial_ball_velocity=[0, 0], max_frames=MAX_FRAMES, use_ray=False, record_fn=None, train=False, rand=False):
         global pystk_init_done
 
         data = []
@@ -286,8 +319,13 @@ class Rollout_new:
             if record_fn:
                 self._r(record_fn)(team0_state, team1_state, soccer_state=soccer_state, actions=actions)
 
-            agent_data['action0'] = team0_actions[0]
-            agent_data['action1'] = team0_actions[1]
+            if self.player_team == 0:
+                agent_data['action0'] = team0_actions[0]
+                agent_data['action1'] = team0_actions[1]
+            else:
+                agent_data['action0'] = team1_actions[0]
+                agent_data['action1'] = team1_actions[1]
+
             self.race.step([pystk.Action(**a) for a in actions])
 
             # Gather velocity of puck and karts
@@ -329,7 +367,7 @@ def rollout_many(many_agents, **kwargs):
     data = []
     for i, agent in enumerate(many_agents):
         print("performing rollout number ", i)
-        rollout = Rollout_new(many_agents[i], train=True, **kwargs)
+        rollout = Rollout_new(many_agents[i], i, train=True, **kwargs)
         data.append(rollout.__call__(train=True, **kwargs))
     return data
 

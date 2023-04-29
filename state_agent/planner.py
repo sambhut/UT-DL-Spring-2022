@@ -53,8 +53,10 @@ class Planner(torch.nn.Module):
             torch.nn.ReLU(),
             torch.nn.Linear(hidden_size, 64),
             torch.nn.BatchNorm1d(64),
+            torch.nn.ReLU(),
             torch.nn.Linear(64, 32),
             torch.nn.BatchNorm1d(32),
+            torch.nn.ReLU(),
             torch.nn.Linear(32, output_size, bias=False)
         )
 
@@ -99,7 +101,8 @@ class Planner(torch.nn.Module):
         if out.dim() != x.dim():
             out = out.squeeze(0)
 
-        out = self.softmax(out)
+        #print("out in network is ", out)
+        #out = self.softmax(out)
         #return out
 
         #print("out.size is ", out.size())
@@ -152,3 +155,19 @@ def network_features(player_pos, opponent_pos, ball_pos):
         kart_to_goal_line_angle_difference], dtype=torch.float32)
 
     return features
+
+def save_model(model):
+    from torch import save
+    from os import path
+    for n, m in model_factory.items():
+        if isinstance(model, m):
+            return save(model.state_dict(), path.join(path.dirname(path.abspath(__file__)), '%s.th' % n))
+    raise ValueError("model type '%s' not supported!" % str(type(model)))
+
+
+def load_model(model):
+    from torch import load
+    from os import path
+    r = model_factory[model]()
+    r.load_state_dict(load(path.join(path.dirname(path.abspath(__file__)), '%s.th' % model), map_location='cpu'))
+    return r
