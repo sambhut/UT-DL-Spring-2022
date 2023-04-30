@@ -9,54 +9,19 @@ class Planner(torch.nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
         super(Planner, self).__init__()
 
-        """
-        self.accNetwork = torch.nn.Sequential(
-            torch.nn.Linear(input_size, hidden_size),
-            torch.nn.BatchNorm1d(hidden_size),
-            torch.nn.ReLU(),
-            torch.nn.Linear(hidden_size, 64),
-            torch.nn.BatchNorm1d(64),
-            torch.nn.Linear(64, 32),
-            torch.nn.BatchNorm1d(32),
-            torch.nn.Linear(32, 1, bias=False),
-            nn.Sigmoid() # acc is in range [0,1]
-        )
-
-        self.steerNetwork = torch.nn.Sequential(
-            torch.nn.Linear(input_size, hidden_size),
-            torch.nn.BatchNorm1d(hidden_size),
-            torch.nn.ReLU(),
-            torch.nn.Linear(hidden_size, 64),
-            torch.nn.BatchNorm1d(64),
-            torch.nn.Linear(64, 32),
-            torch.nn.BatchNorm1d(32),
-            torch.nn.Linear(32, 1, bias=False),
-            nn.Tanh() # steer is in range [-1, 1]
-        )
-
-        self.brakeNetwork = torch.nn.Sequential(
-            torch.nn.Linear(input_size, hidden_size),
-            torch.nn.BatchNorm1d(hidden_size),
-            torch.nn.ReLU(),
-            torch.nn.Linear(hidden_size, 64),
-            torch.nn.BatchNorm1d(64),
-            torch.nn.Linear(64, 32),
-            torch.nn.BatchNorm1d(32),
-            torch.nn.Linear(32, 1, bias=False),
-            nn.Sigmoid() # brake is either 0 or 1
-        )
-        """
-
         self.newnetwork = torch.nn.Sequential(
             torch.nn.Linear(input_size, hidden_size),
             torch.nn.BatchNorm1d(hidden_size),
             torch.nn.ReLU(),
+            torch.nn.Dropout(0.5),
             torch.nn.Linear(hidden_size, 64),
             torch.nn.BatchNorm1d(64),
             torch.nn.ReLU(),
+            torch.nn.Dropout(0.5),
             torch.nn.Linear(64, 32),
             torch.nn.BatchNorm1d(32),
             torch.nn.ReLU(),
+            torch.nn.Dropout(0.5),
             torch.nn.Linear(32, output_size, bias=False)
         )
 

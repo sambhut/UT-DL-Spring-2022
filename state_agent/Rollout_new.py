@@ -97,7 +97,7 @@ class Rollout_new:
         # CURRENTLY FOR opponent_id 0-5 PLAYER IS TEAM0, AND opponent_id >= 6, PLAYER IS TEAM1.
         if train is True:
 
-            if opponent_id < len(opponents):
+            if opponent_id/len(opponents):
                 team0_updated = team0
                 team1_updated = opponents[opponent_no]
                 # If opponent_no = 5, then opponent is AI (from the opponents list)
@@ -184,6 +184,8 @@ class Rollout_new:
         old_puck_center = torch.Tensor([0, 0])
         old_kart_center1 = torch.Tensor([0, 0])
         old_kart_center2 = torch.Tensor([0, 0])
+        old_opp_center1 = torch.Tensor([0, 0])
+        old_opp_center2 = torch.Tensor([0, 0])
 
         # Start iterating over all frames
         for it in range(max_frames):
@@ -242,28 +244,38 @@ class Rollout_new:
             if self.player_team == 0:
                 agent_data['action0'] = team0_actions[0]
                 agent_data['action1'] = team0_actions[1]
-                current_kart_center1 = torch.tensor(team0_state[0]["kart"]["location"], dtype=torch.float32)[[0, 2]]
-                current_kart_center2 = torch.tensor(team0_state[1]["kart"]["location"], dtype=torch.float32)[[0, 2]]
             else:
                 agent_data['action0'] = team1_actions[0]
                 agent_data['action1'] = team1_actions[1]
-                current_kart_center1 = torch.tensor(team1_state[0]["kart"]["location"], dtype=torch.float32)[[0, 2]]
-                current_kart_center2 = torch.tensor(team1_state[1]["kart"]["location"], dtype=torch.float32)[[0, 2]]
 
             self.race.step([pystk.Action(**a) for a in actions])
+
+            current_kart_center1 = torch.tensor(player_team_state[0]["kart"]["location"], dtype=torch.float32)[[0, 2]]
+            current_kart_center2 = torch.tensor(player_team_state[1]["kart"]["location"], dtype=torch.float32)[[0, 2]]
+
+            current_opp_center1 = torch.tensor(opponent_team_state[0]["kart"]["location"], dtype=torch.float32)[[0, 2]]
+            current_opp_center2 = torch.tensor(opponent_team_state[1]["kart"]["location"], dtype=torch.float32)[[0, 2]]
 
             # Gather velocity of puck and karts
             current_puck_center = torch.tensor(soccer_state['ball']['location'], dtype=torch.float32)[[0, 2]]
             agent_data['ball_velocity'] = current_puck_center - old_puck_center
+
             agent_data['kart_velocity'] = []
             agent_data['kart_velocity'].append(current_kart_center1 - old_kart_center1)
             agent_data['kart_velocity'].append(current_kart_center2 - old_kart_center2)
+
+
+            agent_data['opp_velocity'] = []
+            agent_data['opp_velocity'].append(current_opp_center1 - old_opp_center1)
+            agent_data['opp_velocity'].append(current_opp_center2 - old_opp_center2)
 
             # Save all relevant data
             data.append(agent_data)
             old_puck_center = current_puck_center
             old_kart_center1 = current_kart_center1
             old_kart_center2 = current_kart_center2
+            old_opp_center1 = current_opp_center1
+            old_opp_center2 = current_opp_center2
 
         self.race.stop()
         del self.race
