@@ -142,7 +142,7 @@ class Rollout_new:
         self.race.start()
         self.race.step()
 
-        self.team0 = team0
+        self.team0 = team0_updated
         self.team1 = team1_updated
 
     def __call__(self, initial_ball_location=[0, 0], initial_ball_velocity=[0, 0], initial_angular_velocity = [0, 0] ,max_frames=MAX_FRAMES, use_ray=False, record_fn=None, train=False):
