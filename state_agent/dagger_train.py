@@ -3,7 +3,7 @@ from jurgen_agent.player import Team as Jurgen
 from geoffrey_agent.player import Team as Geoffrey
 from state_agent.player import network_features, action_to_actionspace, Team as Actor
 from state_agent.Rollout_new import rollout_many, MAX_FRAMES
-from state_agent.planner import Planner, save_model
+from state_agent.planner import Planner, save_model, load_model
 from state_agent.Rollout_new import Rollout_new
 from os import path
 from tournament.utils import VideoRecorder
@@ -30,6 +30,13 @@ def train():
 
     # Create the network
     action_net = Planner(27, 128, 6).to(device)
+
+
+    model_filepath = "state_agent.pt"
+
+    action_net = load_model(action_net, model_filepath)
+
+
 
     # Create the optimizer
     optimizer1 = torch.optim.Adam(action_net.parameters(), lr=learning_rate1, weight_decay=weight_decay1)
