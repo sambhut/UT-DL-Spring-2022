@@ -90,14 +90,12 @@ class Rollout_new:
 
         # If we are training we want to collect multiple trajectories. So based on the
         # opponent_id we set player to team0 or team1. In the current logic of the code,
-        # for opponent_no 0-5, player is team0 and opponent is team1. For any values beyond
-        # 5, player is team1 and opponent is team0. I wanted to extend my logic to something
-        # like this- opponent_id- 0-5 player is team0, opponent_id 6-11 player is team1,
-        # 12-17 player is team0 and so on (This logic is not implemented as I didn't get time).
-        # CURRENTLY FOR opponent_id 0-5 PLAYER IS TEAM0, AND opponent_id >= 6, PLAYER IS TEAM1.
+        # for opponent_id 0-5, player is team0 and opponent is team1. For opponent_id
+        # 5-11, player is team1 and opponent is team0. For opponent_id 12-17 player is
+        # team0, opponent is team1 and so on.
         if train is True:
 
-            if opponent_id/len(opponents):
+            if (opponent_id//len(opponents)) % 2 == 0:
                 team0_updated = team0
                 team1_updated = opponents[opponent_no]
                 # If opponent_no = 5, then opponent is AI (from the opponents list)
@@ -105,7 +103,6 @@ class Rollout_new:
                 # Player is team 0
                 self.player_team = 0
 
-            # The second case (opponent_id >=6, player is always team1)
             else:
                 team0_updated = opponents[opponent_no]
                 team1_updated = team0
@@ -289,7 +286,7 @@ class Rollout_new:
 def rollout_many(many_agents, **kwargs):
     data = []
     for i, agent in enumerate(many_agents):
-        print("performing rollout number ", i)
+        print("************* performing rollout number ", i, "*************")
         rollout = Rollout_new(many_agents[i], i, train=True, **kwargs)
         data.append(rollout.__call__(train=True, **kwargs))
     return data
@@ -298,8 +295,8 @@ if __name__ == "__main__":
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
     team0 = Jurgen()
-    #team1 = AIRunner()
-    team1 = Geoffrey()
+    team1 = AIRunner()
+    #team1 = Geoffrey()
     num_player = 2
     use_ray = False
     record_video = True
