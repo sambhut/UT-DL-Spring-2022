@@ -4,16 +4,15 @@ import math
 import numpy as np
 from collections import namedtuple
 import torch
+
+from state_agent.player import Team
 import pickle
-from argparse import ArgumentParser
 from pathlib import Path
 from os import environ
 
-
-
 TRACK_NAME = 'icy_soccer_field'
 MAX_FRAMES = 1200
-MAX_FRAMES_TRAIN = 1200 # tune this for PPO training purpose
+MAX_FRAMES_TRAIN = 600 # tune this for PPO training purpose
 NUM_PLAYER = 2
 
 RunnerInfo = namedtuple('RunnerInfo', ['agent_type', 'error', 'total_act_time'])
@@ -149,21 +148,64 @@ class Match:
             return ray.get(f)
         return f
 
-    def _check(self, team1, team2, where, n_iter, timeout):
-        _, error, t1 = self._g(self._r(team1.info)())
-        if error:
-            raise MatchException([0, 3], 'other team crashed', 'crash during {}: {}'.format(where, error))
+    def assign_reward(self, playerid, puck_pos, goal_pos, team1_state, team2_state, old_score, new_score):
+        print("playerid, puck_pos, goal_pos : ", playerid, ",")
+        print("\t", puck_pos)
+        print("\t", goal_pos)
+        goal = 2
+        default = -0.05
+        puck_reward = 0.5
+        angle1_reward = 0.2
+        angle2_reward = 0.2
+        angle3_reward = 0.2
+        dis_threshold = 10
 
-        _, error, t2 = self._g(self._r(team2.info)())
-        if error:
-            raise MatchException([3, 0], 'crash during {}: {}'.format(where, error), 'other team crashed')
+        # default
+        reward = default
 
-        logging.debug('timeout {} <? {} {}'.format(timeout, t1, t2))
-        return t1 < timeout, t2 < timeout
+        # Scoring goals
+        if old_score[0] < new_score[0]:
+            reward += goal
+        elif old_score[1] > new_score[1]:
+            reward -= goal
 
-    def euclidean_distance(self,point1, point2):
-        return np.sqrt(np.sum((np.array(point1) - np.array(point2)) ** 2))
+        #player distances to puck
+        player_pos = torch.tensor(team1_state[playerid]['kart']['location'], dtype=torch.float32)[[0, 2]]
 
+        kart_front = torch.tensor(team1_state[playerid]['kart']['front'], dtype=torch.float32)[[0, 2]]
+        kart_center = torch.tensor(team1_state[playerid]['kart']['location'], dtype=torch.float32)[[0, 2]]
+        player_dir = (kart_front - kart_center) / torch.norm(kart_front - kart_center)
+
+        # Distance between player and puck
+        dist_to_puck = torch.norm(player_pos - puck_pos)
+        print("dist_to_puck: ", dist_to_puck)
+
+        # Compute angle between player and goal post
+        player_goal_dir = (goal_pos - player_pos) / torch.norm(goal_pos - player_pos)
+        player_puck_dir = (puck_pos - player_pos) / torch.norm(puck_pos - player_pos)
+        angle1 = torch.acos(torch.dot(player_goal_dir, player_puck_dir))
+        print("player_goal_dir, player_puck_dir: ", player_goal_dir, player_puck_dir)
+
+        if dist_to_puck > dis_threshold:
+            reward += puck_reward * (1 / dist_to_puck)
+        else:
+            reward += angle1_reward * (torch.cos(angle1))  #reward for facing the goal post
+
+        # Compute angle of kart's direction with kart-puck
+        angle2 = torch.acos(torch.dot(player_dir, player_puck_dir))
+        # Compute angle of kart's direction with puck-goal
+        puck_goal_dir = (goal_pos - puck_pos) / torch.norm(goal_pos - puck_pos)
+        angle3 = torch.acos(torch.dot(player_dir, puck_goal_dir))
+
+        print("angles 1,2,3: ", angle1, angle2, angle3)
+
+        if dist_to_puck > dis_threshold:
+            reward += angle2_reward * (torch.cos(angle2))
+        else:
+            reward += angle3_reward * (torch.cos(angle3))
+        # Opponents:
+
+        return reward.item()
 
     def run(self, team1, team2, num_player=1, max_frames=MAX_FRAMES, max_score=3, record_fn=None, timeout=1000000000,
             initial_ball_location=[0, 0], initial_ball_velocity=[0, 0], verbose=False):
@@ -175,8 +217,9 @@ class Match:
         t1_cars = self._g(self._r(team1.new_match)(0, num_player)) or ['tux']
         t2_cars = self._g(self._r(team2.new_match)(1, num_player)) or ['tux']
 
-
-
+        # Deal with crashes
+        #t1_can_act, t2_can_act = self._check(team1, team2, 'new_match', 0, timeout)
+        t1_can_act, t2_can_act = True, True
 
         # Setup the race config
         logging.info('Setting up race')
@@ -212,6 +255,7 @@ class Match:
 
         old_puck_center = torch.Tensor([initial_ball_location[0], initial_ball_location[1]])
         for it in range(max_frames):
+            print("FRAME ", it, ":")
             logging.debug('iteration {} / {}'.format(it, MAX_FRAMES))
             state.update()
 
@@ -219,13 +263,7 @@ class Match:
             team1_state = [to_native(p) for p in state.players[0::2]]
             team2_state = [to_native(p) for p in state.players[1::2]]
             soccer_state = to_native(state.soccer)
-            team1_images = team2_images = None
-            if self._use_graphics:
-                team1_images = [np.array(race.render_data[i].image) for i in range(0, len(race.render_data), 2)]
-                team2_images = [np.array(race.render_data[i].image) for i in range(1, len(race.render_data), 2)]
 
-            t1_can_act = True
-            t2_can_act = True
             # Have each team produce actions (in parallel)
             if t1_can_act:
                 print("t1 can act")
@@ -238,10 +276,6 @@ class Match:
             team1_actions = self._g(team1_actions_delayed) if t1_can_act else None
             team2_actions = self._g(team2_actions_delayed) if t2_can_act else None
 
-
-            t1_can_act, t2_can_act = True, True
-
-
             # Assemble the actions
             actions = []
             action_ids = []
@@ -253,92 +287,38 @@ class Match:
                 action_ids.append(a1_id)
                 actions.append(a2)
 
-            current_distance = soccer_state["ball"]["location"][0]
-            if current_distance > highest_distance:
-                highest_distance = current_distance
-                payload = {
-                    'team1': {
-                        'highest_distance': highest_distance
-                    }
-                }
-            #Rewards
-
-            #Soccer ball and goal distance (Dense reward setting)
+            # save velocity and score for next frame
             soccer_ball_loc = torch.tensor(soccer_state['ball']['location'], dtype=torch.float32)[[0, 2]]
-            goal_line_center = torch.tensor(soccer_state['goal_line'][1], dtype=torch.float32)[:, [0, 2]].mean(dim=0)
-            #goal_location = torch.tensor([0, -64.5], dtype=torch.float32)
-            current_distance = self.euclidean_distance(soccer_ball_loc, goal_line_center)
-            if current_distance < threshold_goal_distance:
-                puck_goal_distance_reward = 1
-            else:
-                # No reward
-                puck_goal_distance_reward = 0
-
-
-            # rewards towards puck - distance
-            distance = 0
-            for player_info in team1_state:
-                distance = self.euclidean_distance(
-                    torch.tensor(player_info['kart']['location'], dtype=torch.float32)[[0, 2]], soccer_ball_loc)
-                reward = 1 if distance < reward_puck_kart_threshold else 0
-                #reward = -1 if distance > 1 and reward == 1 else 0
-                total_rewards += reward
-
-            average_reward = total_rewards / 2
-            reward_towards_puck = average_reward
-
-
-            # rewards towards puck - distance
-            distance = 0
-            for player_info in team1_state:
-                distance = self.euclidean_distance(
-                    torch.tensor(player_info['kart']['location'], dtype=torch.float32)[[0, 2]], soccer_ball_loc)
-                reward = 1 if distance < reward_puck_kart_threshold else 0
-                #reward = -1 if distance > 1 and reward == 1 else 0
-                total_rewards += reward
-
-            average_reward = total_rewards / 2
-            reward_towards_puck = average_reward
-
-
-            # rewards towards puck - goal direction
-            for player_info in team1_state:
-                puck_agent_vector = np.array(soccer_ball_loc) - np.array(player_info.location)
-                goal_agent_vector = np.array(goal_line_center) - np.array(player_info.location)
-
-                cos_angle = np.dot(puck_agent_vector, goal_agent_vector) / (
-                        np.linalg.norm(puck_agent_vector) * np.linalg.norm(goal_agent_vector))
-
-            cos_threshold = math.cos(math.radians(15))
-            reward_puck_direction = 1 if cos_angle >= cos_threshold else 0
-
-            reward_weight_puck_goal = 2
-            reward_weight_towards_puck = 4.5
-            reward_weight_puck_direction = 2.5
-
-            reward_state = (
-                    (reward_weight_towards_puck * puck_goal_distance_reward)
-                    (reward_weight_puck_goal * reward_towards_puck)
-                    (reward_weight_puck_direction * reward_puck_direction)
-            )
-
-            #velocities
             puck_velocity = soccer_ball_loc - old_puck_center
 
             if record_fn:
                 self._r(record_fn)(team1_state, team2_state, soccer_state=soccer_state, actions=actions,
-                                   team1_images=team1_images, team2_images=team2_images)
-            data_temp = dict(team1_state=team1_state, team2_state=team2_state, soccer_state=soccer_state, action_ids=action_ids,reward_state=reward_state, logprobs=logprobs, puck_velocity=puck_velocity)
+                                   team1_images=None, team2_images=None)
 
-
-            print(f"Rewards towards puck : {reward_towards_puck}")
-            print(f"Puck-goal distance reward : {puck_goal_distance_reward}")
-            print(f"Total Reward state: {reward_state}")
-
+            old_score = soccer_state['score']
             logging.debug('  race.step  [score = {}]'.format(state.soccer.score))
+            # Take a step in the environment
             if (not race.step([self._pystk.Action(**a) for a in actions]) and num_player) or sum(state.soccer.score) >= max_score:
                 break
+            new_score = soccer_state['score']
+            done = (new_score != old_score) # terminal state flag
+
+            # Rewards
+            puck_pos = torch.tensor(soccer_state['ball']['location'], dtype=torch.float32)[[0, 2]]
+            goal_pos1 = torch.tensor(soccer_state['goal_line'][0], dtype=torch.float32)[:, [0, 2]].mean(dim=0)
+            goal_pos2 = torch.tensor(soccer_state['goal_line'][1], dtype=torch.float32)[:, [0, 2]].mean(dim=0)
+            reward1 = self.assign_reward(0, puck_pos, goal_pos1, team1_state, team2_state, old_score, new_score)
+            reward2 = self.assign_reward(1, puck_pos, goal_pos2, team1_state, team2_state, old_score, new_score)
+            reward_state = [reward1, reward2]
+
+            # Save this step's data
+            data_temp = dict(team1_state=team1_state, team2_state=team2_state, soccer_state=soccer_state,
+                             action_ids=action_ids, reward_state=reward_state, logprobs=logprobs,
+                             puck_velocity=puck_velocity, done=done)
+            print("Reward (data_temp): ", reward_state)
             data.append(data_temp)
+
+            #update old values with new after taking step
             old_puck_center = soccer_ball_loc
 
         race.stop()
@@ -357,14 +337,14 @@ def load_recorded_state(file_path):
 
 def record_state(team):
     from . import  utils
-    team1 = TeamRunner(team)
+    #team1 = TeamRunner(team)
     team2 = AIRunner()
     state_file_path = 'recorded_state'
 
     match = Match(use_graphics=False)
     result =None
     try:
-        result = match.run(team1, team2, 2, 1200, 3)
+        result = match.run(team, team2, 2, 1200, 3)
     except MatchException as e:
         print('Match failed', e.score)
         print(' T1:', e.msg1)
@@ -375,13 +355,13 @@ def record_state(team):
 
 def record_video(team):
     from . import utils
-    team1 = TeamRunner(team)
+    #team1 = TeamRunner(team)
     team2 = AIRunner()
     video_file_path = 'my_video.mp4'
     recorder = utils.VideoRecorder(video_file_path)
     match = Match(use_graphics=False)
     try:
-        result = match.run(team1, team2, 2, 1200, 3,record_fn=recorder)
+        result = match.run(team, team2, 2, 1200, 3,record_fn=recorder)
     except MatchException as e:
         print('Match failed', e.score)
         print(' T1:', e.msg1)
@@ -391,13 +371,13 @@ def record_video(team):
 
 def record_manystate(many_agents,parallel=10):
     #from . import remote
-    #import ray # not needed as we aren't using ray
+    #import ray
     team2 = AIRunner()
     results = []
     remote_calls = []
     match = Match(use_graphics=False)
 
     for agent in many_agents:
-        remote_calls.append(match.run(agent, team2, 2, 1200, 3))
+        remote_calls.append(match.run(agent, team2, NUM_PLAYER, MAX_FRAMES_TRAIN, 3))
 
     return remote_calls
