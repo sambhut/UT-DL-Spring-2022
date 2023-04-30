@@ -140,7 +140,7 @@ class Rollout_new:
         #Start the match
         self.race = pystk.Race(race_config)
         self.race.start()
-        #self.race.step()
+        self.race.step()
 
         self.team0 = team0
         self.team1 = team1_updated
@@ -151,14 +151,8 @@ class Rollout_new:
         data = []
         state = pystk.WorldState()
         state.update()
-        #rand3 = random.uniform(-10, 10)
-        #rand4 = random.uniform(-10, 10)
-        '''state.set_ball_location([initial_ball_location[0] + rand3, 1, initial_ball_location[1]+ rand4],
-                                [initial_ball_velocity[0], 0, initial_ball_velocity[1]],[initial_angular_velocity[0] , 0, initial_angular_velocity[1]])'''
-        #state.update()
 
         # Add some randomness to the starting location
-        #if train is True or rand is True:
         if train is True :
             rand3 = random.uniform(-10, 10)
             rand4 = random.uniform(-10, 10)
@@ -168,102 +162,10 @@ class Rollout_new:
                                 [initial_ball_velocity[0], 0, initial_ball_velocity[1]],[initial_angular_velocity[0] , 0, initial_angular_velocity[1]])
             state.update()
 
-
-
-        if use_ray is True:
-            print("rand is ", rand)
-            #rand1 = random.randrange(10)
-            #rand2 = random.randrange(10)
-            rand1 = 3
-            rand2 = 4
-            #rand3 = random.randrange(10)
-            #rand4 = random.randrange(10)
-            rand3 = random.uniform(-10, 10)
-            rand4 = random.uniform(-10, 10)
-            #rand3 = 20
-            #rand4 = -20
-            print("rand1 is ", rand1)
-            print("rand2 is ", rand2)
-            print("rand3 is ", rand3)
-            print("rand4 is ", rand4)
-            print("players are ", state.players)
-            print("players[0::2] is ", state.players[0::2])
-            print("players[0::2] is ", state.players[1::2])
-            team0_state = [to_native(p) for p in state.players[0::2]]
-            team1_state = [to_native(p) for p in state.players[1::2]]
-            player_0_start_location = team0_state[0]["kart"]["location"]
-            player_1_start_location = team0_state[1]["kart"]["location"]
-            player_2_start_location = team1_state[0]["kart"]["location"]
-            player_3_start_location = team1_state[1]["kart"]["location"]
-
-            player_0_kartid = team0_state[0]["kart"]["id"]
-            player_1_kartid = team0_state[1]["kart"]["id"]
-            player_2_kartid = team1_state[0]["kart"]["id"]
-            player_3_kartid = team1_state[1]["kart"]["id"]
-
-            print("player_0_kartid is ", player_0_kartid)
-            print("player_1_kartid is ", player_1_kartid)
-            print("player_2_kartid is ", player_2_kartid)
-            print("player_3_kartid is ", player_3_kartid)
-
-            print("player_0_playerid is ", team0_state[0]["kart"]["player_id"])
-            print("player_1_playerid is ", team0_state[1]["kart"]["player_id"])
-            print("player_2_playerid is ", team1_state[0]["kart"]["player_id"])
-            print("player_3_playerid is ", team1_state[1]["kart"]["player_id"])
-
-            '''state.set_ball_location((initial_ball_location[0]+rand3, 0, initial_ball_location[1]+rand4),
-                                    (initial_ball_velocity[0], 0, initial_ball_velocity[1]))'''
-
-            state.set_ball_location([initial_ball_location[0] + rand3, 1, initial_ball_location[1]+ rand4],
-                                [initial_ball_velocity[0], 0, initial_ball_velocity[1]],[initial_angular_velocity[0] , 0, initial_angular_velocity[1]])
-
-            print("player_0_start_location is ", player_0_start_location)
-            print("player_1_start_location is ", player_1_start_location)
-            print("player_2_start_location is ", player_2_start_location)
-            print("player_3_start_location is ", player_3_start_location)
-
-            print("player_0_start_location[0] is ", player_0_start_location[0])
-            print("player_1_start_location[0] is ", player_1_start_location[0])
-            print("player_2_start_location[0] is ", player_2_start_location[0])
-            print("player_3_start_location[0] is ", player_3_start_location[0])
-
-            player_0_new_position = (player_0_start_location[0]+rand1, player_0_start_location[1], player_0_start_location[2]+rand2)
-            player_1_new_position = (player_1_start_location[0]+rand1, player_1_start_location[1], player_1_start_location[2]+rand2)
-            player_2_new_position = (player_2_start_location[0]+rand1, player_2_start_location[1], player_2_start_location[2]+rand2)
-            player_3_new_position = (player_3_start_location[0]+rand1, player_3_start_location[1], player_3_start_location[2]+rand2)
-
-            print("player_0_new_position is ", player_0_new_position)
-            print("player_1_new_position is ", player_1_new_position)
-            print("player_2_new_position is ", player_2_new_position)
-            print("player_3_new_position is ", player_3_new_position)
-
-            #state.set_kart_location(0, (player_0_start_location[0]+rand1, player_0_start_location[1], player_0_start_location[2]+rand2))
-            #state.set_kart_location(2, (player_1_start_location[0]+rand1, player_1_start_location[1], player_1_start_location[2]+rand2))
-            #state.set_kart_location(1, (player_2_start_location[0]+rand1, player_2_start_location[1], player_2_start_location[2]+rand2))
-            #state.set_kart_location(3, (player_3_start_location[0]+rand1, player_3_start_location[1], player_3_start_location[2]+rand2))
-
-            state.set_kart_location(0, player_0_new_position)
-            state.set_kart_location(2, player_1_new_position)
-            state.set_kart_location(1, player_2_new_position)
-            state.set_kart_location(3, player_3_new_position)
-
-            #state.set_kart_location(kart_id=0, position=(-1, player_0_start_location[1], -1))
-            #state.set_kart_location(kart_id=1, position=(-5, player_0_start_location[1], -5))
-            #state.set_kart_location(kart_id=2, position=(-4, player_0_start_location[1], -4))
-            #state.set_kart_location(kart_id=3, position=(-10, player_0_start_location[1], 10))
-
-        if record_fn:
-            print("record_fn is not None")
-        else:
-            print("record_fn is None")
-
-        #self.race.start()
-
-
         old_puck_center = torch.Tensor([0, 0])
         old_kart_center1 = torch.Tensor([0, 0])
         old_kart_center2 = torch.Tensor([0, 0])
-        old_soccer_state = {'ball': {'location': [0.0, 0.0, 0.0]}}
+
         for it in range(max_frames):
             #print("soccer ball location before update is ", to_native(state.soccer)['ball']['location'])
             state.update()
@@ -272,90 +174,62 @@ class Rollout_new:
             team0_state = [to_native(p) for p in state.players[0::2]]
             team1_state = [to_native(p) for p in state.players[1::2]]
             soccer_state = to_native(state.soccer)
-            agent_data = {'player_state': team0_state, 'opponent_state': team1_state, 'soccer_state': soccer_state}
+            if self.player_team == 0:
+                team_state = team0_state
+                opp_state = team1_state
+            else:
+                team_state = team1_state
+                opp_state = team0_state
+
+            agent_data = {'player_state': team_state, 'opponent_state': opp_state, 'soccer_state': soccer_state}
 
             # print some data every 100 frames
             if it<10 and train is True:
-            #if train is False:
-            #if (it%1) == 0:
                 print("train is ", train)
                 print("iteration {%d} / {%d}" % (it, max_frames))
-                print("player kart0 location is ", team0_state[0]["kart"]["location"])
-                print("player kart1 location is ", team0_state[1]["kart"]["location"])
-                print("opponent kart0 is ", team1_state[0]["kart"]["location"])
-                print("opponent kart1 is ", team1_state[1]["kart"]["location"])
+                print("player kart0 location is ", team_state[0]["kart"]["location"])
+                print("player kart1 location is ", team_state[1]["kart"]["location"])
+                print("opponent kart0 is ", opp_state[0]["kart"]["location"])
+                print("opponent kart1 is ", opp_state[1]["kart"]["location"])
                 print("After soccer ball location is ", soccer_state['ball']['location'])
 
             # Have each team produce actions (in parallel)
-            t0_can_act = True  # True for now, or we can use _check function in runner
-            t1_can_act = True
-            if t0_can_act:
-                team0_actions_delayed = self._r(self.team0.act)(team0_state, team1_state, soccer_state)
+            team_can_act = True  # True for now, or we can use _check function in runner
+            opp_can_act = True
+            if team_can_act:
+                team_actions_delayed = self._r(self.team0.act)(team_state, opp_state, soccer_state)
 
-            if t1_can_act:
-                team1_actions_delayed = self._r(self.team1.act)(team1_state, team0_state, soccer_state)
+            if opp_can_act:
+                opp_actions_delayed = self._r(self.team1.act)(opp_state, team_state, soccer_state)
 
-            #Wait for actions to finish
-            #team0_actions = self._g(team0_actions_delayed) if t0_can_act else None
-            #team1_actions = self._g(team1_actions_delayed) if t1_can_act else None
-
-            team0_actions = team0_actions_delayed if t0_can_act else None
-            team1_actions = team1_actions_delayed if t1_can_act else None
-
-            """
-            CHECK: do we need this really??
-            new_t0_can_act, new_t1_can_act = self._check(team0, team1, 'act', it, timeout)
-            if not new_t0_can_act and t0_can_act and verbose:
-                print('Team 0 timed out')
-            if not new_t1_can_act and t1_can_act and verbose:
-                print('Team 1 timed out')
-
-            t0_can_act, t1_can_act = new_t0_can_act, new_t1_can_act
-            """
+            team_actions = team_actions_delayed if team_can_act else None
+            opp_actions = opp_actions_delayed if opp_can_act else None
 
             # Assemble the actions
             actions = []
             for i in range(self.num_player):
-                a0 = team0_actions[i] if team0_actions is not None and i < len(team0_actions) else {}
-                a1 = team1_actions[i] if team1_actions is not None and i < len(team1_actions) else {}
+                a0 = team_actions[i] if team_actions is not None and i < len(team_actions) else {}
+                a1 = opp_actions[i] if opp_actions is not None and i < len(opp_actions) else {}
                 actions.append(a0)
                 actions.append(a1)
 
-            #print(actions)
-
             if record_fn:
-                self._r(record_fn)(team0_state, team1_state, soccer_state=soccer_state, actions=actions)
+                self._r(record_fn)(team_state, opp_state, soccer_state=soccer_state, actions=actions)
 
-            if self.player_team == 0:
-                agent_data['action0'] = team0_actions[0]
-                agent_data['action1'] = team0_actions[1]
-            else:
-                agent_data['action0'] = team1_actions[0]
-                agent_data['action1'] = team1_actions[1]
+
+            agent_data['action0'] = team_actions[0]
+            agent_data['action1'] = team_actions[1]
 
             self.race.step([pystk.Action(**a) for a in actions])
 
             # Gather velocity of puck and karts
             current_puck_center = torch.tensor(soccer_state['ball']['location'], dtype=torch.float32)[[0, 2]]
-            current_kart_center1 = torch.tensor(team0_state[0]["kart"]["location"], dtype=torch.float32)[[0, 2]]
-            current_kart_center2 = torch.tensor(team0_state[1]["kart"]["location"], dtype=torch.float32)[[0, 2]]
+            current_kart_center1 = torch.tensor(team_state[0]["kart"]["location"], dtype=torch.float32)[[0, 2]]
+            current_kart_center2 = torch.tensor(team_state[1]["kart"]["location"], dtype=torch.float32)[[0, 2]]
             agent_data['ball_velocity'] = current_puck_center - old_puck_center
             agent_data['kart_velocity'] = []
             agent_data['kart_velocity'].append(current_kart_center1 - old_kart_center1)
             agent_data['kart_velocity'].append(current_kart_center2 - old_kart_center2)
-
-            """
-            # print some data every 100 frames
-            #if (it%200) == 0 and train is False:
-            if train is False:
-                print("train is ", train)
-                print("iteration {%d} / {%d}" % (it, max_frames))
-                print("player kart0 location is ", team0_state[0]["kart"]["location"])
-                print("player kart1 location is ", team0_state[1]["kart"]["location"])
-                print("opponent kart0 is ", team1_state[0]["kart"]["location"])
-                print("opponent kart1 is ", team1_state[1]["kart"]["location"])
-                print("soccer ball location is ", soccer_state['ball']['location'])
-            """
 
             # Save all relevant data
             data.append(agent_data)
@@ -396,5 +270,5 @@ if __name__ == "__main__":
 
     rollout = Rollout_new(team0=team0, team1=team1, num_player=num_player, use_ray=use_ray, train=False)
 
-    rollout.__call__(use_ray=use_ray, record_fn=recorder, rand=rand)
+    rollout.__call__(use_ray=use_ray, record_fn=recorder)
 
