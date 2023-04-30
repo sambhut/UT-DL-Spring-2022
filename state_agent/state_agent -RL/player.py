@@ -5,7 +5,8 @@ from torch.distributions import Categorical
 
 from state_agent.planner import Planner
 
-ACTION_SPACE = [(1,0,-1), (1,0,0), (1,0,1), (0,1,-1), (0,1,0), (0,1,1)] # all possible (brake, acc, steer) tuples, i.e. our action space
+# Defining our action space in the environment
+ACTION_SPACE = [(1,0,-1), (1,0,0), (1,0,1), (0,1,-1), (0,1,0), (0,1,1)] # all possible (brake, acc, steer) tuples
 
 
 def limit_period(angle):
@@ -150,21 +151,15 @@ class Team:
             else:
                 output_dist = self.model1(input_tensor)
 
-            print(output_dist)
-
             # Sample the action from output probabilities
-            #dist = Categorical(output_probs)
             action_id = output_dist.sample()          #tensor with 1 value representing index in action space
             action_tuple = ACTION_SPACE[action_id]    #tuple of 3 values
             actions.append(dict(acceleration=action_tuple[1], steer=action_tuple[2], brake=action_tuple[0]))
             action_ids.append(action_id)
 
-            # prob required for PPO (only for training) # !Caution: remove when you run actual grader
+            # prob required for PPO (only for training)
             logprob = output_dist.log_prob(action_id).item()
             logprobs.append(logprob)
 
-            print("actions:", actions)
-            print("logprobs:", logprobs)
-            print("action_ids:", action_ids)
-
+        #print("act(): logprobs, action_ids", logprobs, action_ids)
         return actions, logprobs, action_ids
